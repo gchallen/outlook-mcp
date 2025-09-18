@@ -1,6 +1,11 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { MailFolder } from '@microsoft/microsoft-graph-types';
 
+// Pagination limits to prevent excessive context generation
+const PAGINATION_LIMITS = {
+  FOLDERS: { default: 20, max: 50 },
+} as const;
+
 export class FolderTools {
   constructor(private client: Client) {}
 
@@ -9,16 +14,26 @@ export class FolderTools {
     select?: string;
     top?: number;
     skip?: number;
-  }): Promise<MailFolder[]> {
+  }): Promise<{
+    value: MailFolder[];
+    '@odata.nextLink'?: string;
+    '@odata.count'?: number;
+  }> {
     const request = this.client.api('/me/mailFolders');
 
     if (params?.filter) request.filter(params.filter);
     if (params?.select) request.select(params.select);
-    if (params?.top) request.top(params.top);
+    // Apply default pagination limit to prevent excessive context generation
+    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.FOLDERS.default, PAGINATION_LIMITS.FOLDERS.max);
+    request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 
     const response = await request.get();
-    return response.value;
+    return {
+      value: response.value,
+      '@odata.nextLink': response['@odata.nextLink'],
+      '@odata.count': response['@odata.count'],
+    };
   }
 
   async getMailFolder(
@@ -78,16 +93,26 @@ export class FolderTools {
       top?: number;
       skip?: number;
     },
-  ): Promise<MailFolder[]> {
+  ): Promise<{
+    value: MailFolder[];
+    '@odata.nextLink'?: string;
+    '@odata.count'?: number;
+  }> {
     const request = this.client.api(`/me/mailFolders/${folderId}/childFolders`);
 
     if (params?.filter) request.filter(params.filter);
     if (params?.select) request.select(params.select);
-    if (params?.top) request.top(params.top);
+    // Apply default pagination limit to prevent excessive context generation
+    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.FOLDERS.default, PAGINATION_LIMITS.FOLDERS.max);
+    request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 
     const response = await request.get();
-    return response.value;
+    return {
+      value: response.value,
+      '@odata.nextLink': response['@odata.nextLink'],
+      '@odata.count': response['@odata.count'],
+    };
   }
 
   async getWellKnownFolder(

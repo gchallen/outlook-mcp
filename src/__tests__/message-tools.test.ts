@@ -33,22 +33,32 @@ describe('MessageTools', () => {
   describe('listMessages', () => {
     it('should list messages from inbox by default', async () => {
       const mockMessages = [{ id: '1', subject: 'Test Message' }];
-      mockRequest.get.mockResolvedValue({ value: mockMessages });
+      const mockResponse = { value: mockMessages, '@odata.nextLink': undefined, '@odata.count': undefined };
+      mockRequest.get.mockResolvedValue(mockResponse);
 
       const result = await messageTools.listMessages();
 
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual({
+        value: mockMessages,
+        '@odata.nextLink': undefined,
+        '@odata.count': undefined,
+      });
     });
 
     it('should list messages from specific folder', async () => {
       const mockMessages = [{ id: '1', subject: 'Test Message' }];
-      mockRequest.get.mockResolvedValue({ value: mockMessages });
+      const mockResponse = { value: mockMessages, '@odata.nextLink': undefined, '@odata.count': undefined };
+      mockRequest.get.mockResolvedValue(mockResponse);
 
       const result = await messageTools.listMessages({ folderId: 'folder123' });
 
       expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/folder123/messages');
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual({
+        value: mockMessages,
+        '@odata.nextLink': undefined,
+        '@odata.count': undefined,
+      });
     });
 
     it('should apply query parameters', async () => {
@@ -127,13 +137,18 @@ describe('MessageTools', () => {
   describe('searchMessages', () => {
     it('should search messages', async () => {
       const mockResults = [{ id: '1', subject: 'Found Message' }];
-      mockRequest.get.mockResolvedValue({ value: mockResults });
+      const mockResponse = { value: mockResults, '@odata.nextLink': undefined, '@odata.count': undefined };
+      mockRequest.get.mockResolvedValue(mockResponse);
 
       const result = await messageTools.searchMessages('test query');
 
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
       expect(mockRequest.search).toHaveBeenCalledWith('test query');
-      expect(result).toEqual(mockResults);
+      expect(result).toEqual({
+        value: mockResults,
+        '@odata.nextLink': undefined,
+        '@odata.count': undefined,
+      });
     });
   });
 });

@@ -1,6 +1,13 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Message, Attachment } from '@microsoft/microsoft-graph-types';
 
+// Pagination limits to prevent excessive context generation
+const PAGINATION_LIMITS = {
+  MESSAGES: { default: 25, max: 100 },
+  SEARCH: { default: 25, max: 50 },
+  ATTACHMENTS: { default: 10, max: 25 },
+} as const;
+
 export class MessageTools {
   constructor(private client: Client) {}
 
@@ -11,7 +18,11 @@ export class MessageTools {
     skip?: number;
     orderBy?: string;
     folderId?: string;
-  }): Promise<Message[]> {
+  }): Promise<{
+    value: Message[];
+    '@odata.nextLink'?: string;
+    '@odata.count'?: number;
+  }> {
     let endpoint = params?.folderId
       ? `/me/mailFolders/${params.folderId}/messages`
       : '/me/messages';
@@ -20,12 +31,18 @@ export class MessageTools {
 
     if (params?.filter) request.filter(params.filter);
     if (params?.select) request.select(params.select);
-    if (params?.top) request.top(params.top);
+    // Apply default pagination limit to prevent excessive context generation
+    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.MESSAGES.default, PAGINATION_LIMITS.MESSAGES.max);
+    request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
     if (params?.orderBy) request.orderby(params.orderBy);
 
     const response = await request.get();
-    return response.value;
+    return {
+      value: response.value,
+      '@odata.nextLink': response['@odata.nextLink'],
+      '@odata.count': response['@odata.count'],
+    };
   }
 
   async getMessage(messageId: string, params?: { select?: string; expand?: string }): Promise<Message> {
@@ -115,15 +132,25 @@ export class MessageTools {
     select?: string;
     top?: number;
     skip?: number;
-  }): Promise<Message[]> {
+  }): Promise<{
+    value: Message[];
+    '@odata.nextLink'?: string;
+    '@odata.count'?: number;
+  }> {
     const request = this.client.api('/me/messages').search(searchTerm);
 
     if (params?.select) request.select(params.select);
-    if (params?.top) request.top(params.top);
+    // Apply default pagination limit to prevent excessive context generation
+    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.SEARCH.default, PAGINATION_LIMITS.SEARCH.max);
+    request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 
     const response = await request.get();
-    return response.value;
+    return {
+      value: response.value,
+      '@odata.nextLink': response['@odata.nextLink'],
+      '@odata.count': response['@odata.count'],
+    };
   }
 
   async getMessageDelta(params?: {
@@ -145,9 +172,27 @@ export class MessageTools {
     return await this.client.api(endpoint).get();
   }
 
-  async listAttachments(messageId: string): Promise<Attachment[]> {
-    const response = await this.client.api(`/me/messages/${messageId}/attachments`).get();
-    return response.value;
+  async listAttachments(messageId: string, params?: {
+    top?: number;
+    skip?: number;
+  }): Promise<{
+    value: Attachment[];
+    '@odata.nextLink'?: string;
+    '@odata.count'?: number;
+  }> {
+    const request = this.client.api(`/me/messages/${messageId}/attachments`);
+
+    // Apply default pagination limit to prevent excessive context generation
+    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.ATTACHMENTS.default, PAGINATION_LIMITS.ATTACHMENTS.max);
+    request.top(topLimit);
+    if (params?.skip) request.skip(params.skip);
+
+    const response = await request.get();
+    return {
+      value: response.value,
+      '@odata.nextLink': response['@odata.nextLink'],
+      '@odata.count': response['@odata.count'],
+    };
   }
 
   async getAttachment(messageId: string, attachmentId: string): Promise<Attachment> {

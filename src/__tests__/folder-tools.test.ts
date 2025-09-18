@@ -31,12 +31,17 @@ describe('FolderTools', () => {
   describe('listMailFolders', () => {
     it('should list mail folders', async () => {
       const mockFolders = [{ id: '1', displayName: 'Inbox' }];
-      mockRequest.get.mockResolvedValue({ value: mockFolders });
+      const mockResponse = { value: mockFolders, '@odata.nextLink': undefined, '@odata.count': undefined };
+      mockRequest.get.mockResolvedValue(mockResponse);
 
       const result = await folderTools.listMailFolders();
 
       expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders');
-      expect(result).toEqual(mockFolders);
+      expect(result).toEqual({
+        value: mockFolders,
+        '@odata.nextLink': undefined,
+        '@odata.count': undefined,
+      });
     });
 
     it('should apply query parameters', async () => {
@@ -119,12 +124,17 @@ describe('FolderTools', () => {
   describe('listChildFolders', () => {
     it('should list child folders', async () => {
       const mockFolders = [{ id: '1', displayName: 'Child 1' }];
-      mockRequest.get.mockResolvedValue({ value: mockFolders });
+      const mockResponse = { value: mockFolders, '@odata.nextLink': undefined, '@odata.count': undefined };
+      mockRequest.get.mockResolvedValue(mockResponse);
 
       const result = await folderTools.listChildFolders('parent123');
 
       expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/parent123/childFolders');
-      expect(result).toEqual(mockFolders);
+      expect(result).toEqual({
+        value: mockFolders,
+        '@odata.nextLink': undefined,
+        '@odata.count': undefined,
+      });
     });
   });
 });

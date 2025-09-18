@@ -10,6 +10,7 @@ A Model Context Protocol (MCP) server that provides access to Microsoft Outlook 
 - **Attachment Support**: List, add, and manage email attachments
 - **Message Rules**: Create and manage inbox rules for automatic message processing
 - **Well-Known Folders**: Access standard folders like Inbox, Sent Items, Drafts, etc.
+- **Automatic Pagination**: All list operations include built-in pagination to prevent excessive context generation
 
 ## Installation
 
@@ -63,7 +64,7 @@ npx outlook-mcp
 
 #### Message Tools
 
-- `list_messages` - List messages in mailbox or specific folder
+- `list_messages` - List messages in mailbox or specific folder (paginated, default: 25, max: 100)
 - `get_message` - Get a specific message by ID
 - `create_message` - Create a draft message
 - `update_message` - Update message properties
@@ -75,21 +76,23 @@ npx outlook-mcp
 - `forward_message` - Forward a message
 - `move_message` - Move a message to another folder
 - `copy_message` - Copy a message to another folder
-- `search_messages` - Search for messages
+- `search_messages` - Search for messages (paginated, default: 25, max: 50)
+- `list_attachments` - List message attachments (paginated, default: 10, max: 25)
 
 #### Folder Tools
 
-- `list_mail_folders` - List mail folders
+- `list_mail_folders` - List mail folders (paginated, default: 20, max: 50)
 - `get_mail_folder` - Get a specific mail folder
 - `create_mail_folder` - Create a new mail folder
 - `update_mail_folder` - Update mail folder properties
 - `delete_mail_folder` - Delete a mail folder
 - `move_mail_folder` - Move a mail folder
+- `list_child_folders` - List child folders (paginated, default: 20, max: 50)
 - `get_well_known_folder` - Get well-known folders (inbox, sentitems, etc.)
 
 #### Rule Tools
 
-- `list_message_rules` - List inbox message rules
+- `list_message_rules` - List inbox message rules (paginated, default: 10, max: 25)
 - `create_message_rule` - Create a new inbox message rule
 - `delete_message_rule` - Delete an inbox message rule
 
@@ -98,11 +101,35 @@ npx outlook-mcp
 ### List Recent Messages
 
 ```typescript
-// Lists the 10 most recent messages
-await messageTools.listMessages({
+// Lists the 10 most recent messages with pagination info
+const result = await messageTools.listMessages({
   top: 10,
   orderBy: 'receivedDateTime desc'
 });
+
+// Result includes pagination metadata:
+// {
+//   value: [...messages...],
+//   '@odata.nextLink': 'https://graph.microsoft.com/v1.0/me/messages?$top=10&$skip=10',
+//   '@odata.count': 150
+// }
+```
+
+### Paginate Through Messages
+
+```typescript
+// Get first page of messages
+let result = await messageTools.listMessages({ top: 25 });
+console.log(`Found ${result.value.length} messages`);
+
+// Get next page if available
+if (result['@odata.nextLink']) {
+  const nextResult = await messageTools.listMessages({
+    top: 25,
+    skip: 25
+  });
+  console.log(`Next page has ${nextResult.value.length} messages`);
+}
 ```
 
 ### Send an Email
@@ -139,6 +166,32 @@ await folderTools.createMailFolder({
 ```typescript
 const results = await messageTools.searchMessages('from:boss@company.com subject:urgent');
 ```
+
+## Pagination
+
+All list operations in this MCP server include automatic pagination to prevent excessive context generation:
+
+### Default Limits
+- **Messages**: 25 per page (max: 100)
+- **Search Results**: 25 per page (max: 50)
+- **Folders**: 20 per page (max: 50)
+- **Rules**: 10 per page (max: 25)
+- **Attachments**: 10 per page (max: 25)
+
+### Response Format
+All paginated operations return an object with:
+```typescript
+{
+  value: [...items...],           // Array of actual results
+  '@odata.nextLink'?: string,     // URL for next page (if available)
+  '@odata.count'?: number         // Total count (if available)
+}
+```
+
+### Pagination Parameters
+Use `top` and `skip` parameters to control pagination:
+- `top`: Number of items to return (respects maximum limits)
+- `skip`: Number of items to skip (for getting subsequent pages)
 
 ## Development
 

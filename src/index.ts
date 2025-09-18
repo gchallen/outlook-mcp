@@ -15,6 +15,15 @@ import 'isomorphic-fetch';
 
 dotenv.config();
 
+// Pagination limits to prevent excessive context generation
+const PAGINATION_LIMITS = {
+  MESSAGES: { default: 25, max: 100 },
+  SEARCH: { default: 25, max: 50 },
+  FOLDERS: { default: 20, max: 50 },
+  RULES: { default: 10, max: 25 },
+  ATTACHMENTS: { default: 10, max: 25 },
+} as const;
+
 const server = new Server(
   {
     name: 'outlook-mcp',
@@ -53,14 +62,14 @@ const tools: Tool[] = [
   // Message Tools
   {
     name: 'list_messages',
-    description: 'List messages in mailbox or specific folder',
+    description: 'List messages in mailbox or specific folder with pagination',
     inputSchema: {
       type: 'object',
       properties: {
         filter: { type: 'string', description: 'OData filter query' },
         select: { type: 'string', description: 'Comma-separated list of fields to return' },
-        top: { type: 'number', description: 'Number of messages to return' },
-        skip: { type: 'number', description: 'Number of messages to skip' },
+        top: { type: 'number', description: 'Number of messages to return (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        skip: { type: 'number', description: 'Number of messages to skip for pagination', minimum: 0 },
         orderBy: { type: 'string', description: 'Field to order by' },
         folderId: { type: 'string', description: 'Folder ID to list messages from' },
       },
@@ -258,14 +267,14 @@ const tools: Tool[] = [
   },
   {
     name: 'search_messages',
-    description: 'Search for messages',
+    description: 'Search for messages with pagination',
     inputSchema: {
       type: 'object',
       properties: {
         searchTerm: { type: 'string', description: 'Search term' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of results' },
-        skip: { type: 'number', description: 'Number to skip' },
+        top: { type: 'number', description: 'Number of results (default: 25, max: 50)', minimum: 1, maximum: 50 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['searchTerm'],
     },
@@ -273,14 +282,14 @@ const tools: Tool[] = [
   // Folder Tools
   {
     name: 'list_mail_folders',
-    description: 'List mail folders',
+    description: 'List mail folders with pagination',
     inputSchema: {
       type: 'object',
       properties: {
         filter: { type: 'string', description: 'OData filter' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of folders' },
-        skip: { type: 'number', description: 'Number to skip' },
+        top: { type: 'number', description: 'Number of folders (default: 20, max: 50)', minimum: 1, maximum: 50 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
     },
   },
@@ -357,13 +366,44 @@ const tools: Tool[] = [
       required: ['folderName'],
     },
   },
+  {
+    name: 'list_attachments',
+    description: 'List attachments for a message with pagination',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID' },
+        top: { type: 'number', description: 'Number of attachments (default: 10, max: 25)', minimum: 1, maximum: 25 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'list_child_folders',
+    description: 'List child folders of a parent folder with pagination',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        folderId: { type: 'string', description: 'Parent folder ID' },
+        filter: { type: 'string', description: 'OData filter' },
+        select: { type: 'string', description: 'Fields to return' },
+        top: { type: 'number', description: 'Number of folders (default: 20, max: 50)', minimum: 1, maximum: 50 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+      },
+      required: ['folderId'],
+    },
+  },
   // Rule Tools
   {
     name: 'list_message_rules',
-    description: 'List inbox message rules',
+    description: 'List inbox message rules with pagination',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        top: { type: 'number', description: 'Number of rules (default: 10, max: 25)', minimum: 1, maximum: 25 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+      },
     },
   },
   {
@@ -465,9 +505,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_well_known_folder':
         return { content: [{ type: 'text', text: JSON.stringify(await folderTools.getWellKnownFolder(args.folderName as any)) }] };
 
+      // Attachment operations
+      case 'list_attachments':
+        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.listAttachments(args.messageId as string, args as any)) }] };
+
+      // Child folder operations
+      case 'list_child_folders':
+        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.listChildFolders(args.folderId as string, args as any)) }] };
+
       // Rule operations
       case 'list_message_rules':
-        return { content: [{ type: 'text', text: JSON.stringify(await ruleTools.listMessageRules()) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(await ruleTools.listMessageRules(args as any)) }] };
       case 'create_message_rule':
         return { content: [{ type: 'text', text: JSON.stringify(await ruleTools.createMessageRule(args as any)) }] };
       case 'delete_message_rule':
