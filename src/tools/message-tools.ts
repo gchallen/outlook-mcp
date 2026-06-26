@@ -33,7 +33,10 @@ export class MessageTools {
     if (params?.filter) request.filter(params.filter);
     if (params?.select) request.select(params.select);
     // Apply default pagination limit to prevent excessive context generation
-    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.MESSAGES.default, PAGINATION_LIMITS.MESSAGES.max);
+    const topLimit = Math.min(
+      params?.top || PAGINATION_LIMITS.MESSAGES.default,
+      PAGINATION_LIMITS.MESSAGES.max,
+    );
     request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
     if (params?.orderBy) request.orderby(params.orderBy);
@@ -46,7 +49,10 @@ export class MessageTools {
     };
   }
 
-  async getMessage(messageId: string, params?: { select?: string; expand?: string }): Promise<Message> {
+  async getMessage(
+    messageId: string,
+    params?: { select?: string; expand?: string },
+  ): Promise<Message> {
     const request = this.client.api(`/me/messages/${messageId}`);
 
     if (params?.select) request.select(params.select);
@@ -74,10 +80,7 @@ export class MessageTools {
     await this.client.api(`/me/messages/${messageId}/send`).post({});
   }
 
-  async sendMail(message: {
-    message: Partial<Message>;
-    saveToSentItems?: boolean;
-  }): Promise<void> {
+  async sendMail(message: { message: Partial<Message>; saveToSentItems?: boolean }): Promise<void> {
     await this.client.api('/me/sendMail').post({
       ...message,
       message: {
@@ -99,9 +102,7 @@ export class MessageTools {
     comment?: string,
     updates?: Partial<Message>,
   ): Promise<void> {
-    const draft: Message = await this.client
-      .api(`/me/messages/${messageId}/${action}`)
-      .post({});
+    const draft: Message = await this.client.api(`/me/messages/${messageId}/${action}`).post({});
 
     const body = injectReplyTop(draft.body as any, comment);
     await this.client.api(`/me/messages/${draft.id}`).patch({
@@ -156,11 +157,14 @@ export class MessageTools {
     await this.client.api(`/me/messages/${messageId}/permanentDelete`).post({});
   }
 
-  async searchMessages(searchTerm: string, params?: {
-    select?: string;
-    top?: number;
-    skip?: number;
-  }): Promise<{
+  async searchMessages(
+    searchTerm: string,
+    params?: {
+      select?: string;
+      top?: number;
+      skip?: number;
+    },
+  ): Promise<{
     value: Message[];
     '@odata.nextLink'?: string;
     '@odata.count'?: number;
@@ -169,7 +173,10 @@ export class MessageTools {
 
     if (params?.select) request.select(params.select);
     // Apply default pagination limit to prevent excessive context generation
-    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.SEARCH.default, PAGINATION_LIMITS.SEARCH.max);
+    const topLimit = Math.min(
+      params?.top || PAGINATION_LIMITS.SEARCH.default,
+      PAGINATION_LIMITS.SEARCH.max,
+    );
     request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 
@@ -181,10 +188,7 @@ export class MessageTools {
     };
   }
 
-  async getMessageDelta(params?: {
-    deltaToken?: string;
-    skipToken?: string;
-  }): Promise<{
+  async getMessageDelta(params?: { deltaToken?: string; skipToken?: string }): Promise<{
     value: Message[];
     deltaLink?: string;
     nextLink?: string;
@@ -200,10 +204,13 @@ export class MessageTools {
     return await this.client.api(endpoint).get();
   }
 
-  async listAttachments(messageId: string, params?: {
-    top?: number;
-    skip?: number;
-  }): Promise<{
+  async listAttachments(
+    messageId: string,
+    params?: {
+      top?: number;
+      skip?: number;
+    },
+  ): Promise<{
     value: Attachment[];
     '@odata.nextLink'?: string;
     '@odata.count'?: number;
@@ -211,7 +218,10 @@ export class MessageTools {
     const request = this.client.api(`/me/messages/${messageId}/attachments`);
 
     // Apply default pagination limit to prevent excessive context generation
-    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.ATTACHMENTS.default, PAGINATION_LIMITS.ATTACHMENTS.max);
+    const topLimit = Math.min(
+      params?.top || PAGINATION_LIMITS.ATTACHMENTS.default,
+      PAGINATION_LIMITS.ATTACHMENTS.max,
+    );
     request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 

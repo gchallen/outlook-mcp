@@ -9,10 +9,7 @@ const PAGINATION_LIMITS = {
 export class RuleTools {
   constructor(private client: Client) {}
 
-  async listMessageRules(params?: {
-    top?: number;
-    skip?: number;
-  }): Promise<{
+  async listMessageRules(params?: { top?: number; skip?: number }): Promise<{
     value: MessageRule[];
     '@odata.nextLink'?: string;
     '@odata.count'?: number;
@@ -20,7 +17,10 @@ export class RuleTools {
     const request = this.client.api('/me/mailFolders/inbox/messageRules');
 
     // Apply default pagination limit to prevent excessive context generation
-    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.RULES.default, PAGINATION_LIMITS.RULES.max);
+    const topLimit = Math.min(
+      params?.top || PAGINATION_LIMITS.RULES.default,
+      PAGINATION_LIMITS.RULES.max,
+    );
     request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 

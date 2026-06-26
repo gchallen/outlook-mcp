@@ -24,7 +24,10 @@ export class FolderTools {
     if (params?.filter) request.filter(params.filter);
     if (params?.select) request.select(params.select);
     // Apply default pagination limit to prevent excessive context generation
-    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.FOLDERS.default, PAGINATION_LIMITS.FOLDERS.max);
+    const topLimit = Math.min(
+      params?.top || PAGINATION_LIMITS.FOLDERS.default,
+      PAGINATION_LIMITS.FOLDERS.max,
+    );
     request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 
@@ -103,7 +106,10 @@ export class FolderTools {
     if (params?.filter) request.filter(params.filter);
     if (params?.select) request.select(params.select);
     // Apply default pagination limit to prevent excessive context generation
-    const topLimit = Math.min(params?.top || PAGINATION_LIMITS.FOLDERS.default, PAGINATION_LIMITS.FOLDERS.max);
+    const topLimit = Math.min(
+      params?.top || PAGINATION_LIMITS.FOLDERS.default,
+      PAGINATION_LIMITS.FOLDERS.max,
+    );
     request.top(topLimit);
     if (params?.skip) request.skip(params.skip);
 
@@ -127,10 +133,7 @@ export class FolderTools {
     return await request.get();
   }
 
-  async getFolderDelta(params?: {
-    deltaToken?: string;
-    skipToken?: string;
-  }): Promise<{
+  async getFolderDelta(params?: { deltaToken?: string; skipToken?: string }): Promise<{
     value: MailFolder[];
     deltaLink?: string;
     nextLink?: string;

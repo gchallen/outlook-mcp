@@ -17,15 +17,6 @@ import 'isomorphic-fetch';
 
 dotenv.config();
 
-// Pagination limits to prevent excessive context generation
-const PAGINATION_LIMITS = {
-  MESSAGES: { default: 25, max: 100 },
-  SEARCH: { default: 25, max: 50 },
-  FOLDERS: { default: 20, max: 50 },
-  RULES: { default: 10, max: 25 },
-  ATTACHMENTS: { default: 10, max: 25 },
-} as const;
-
 const server = new Server(
   {
     name: 'outlook-mcp',
@@ -70,8 +61,17 @@ const tools: Tool[] = [
       properties: {
         filter: { type: 'string', description: 'OData filter query' },
         select: { type: 'string', description: 'Comma-separated list of fields to return' },
-        top: { type: 'number', description: 'Number of messages to return (default: 25, max: 100)', minimum: 1, maximum: 100 },
-        skip: { type: 'number', description: 'Number of messages to skip for pagination', minimum: 0 },
+        top: {
+          type: 'number',
+          description: 'Number of messages to return (default: 25, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
+        skip: {
+          type: 'number',
+          description: 'Number of messages to skip for pagination',
+          minimum: 0,
+        },
         orderBy: { type: 'string', description: 'Field to order by' },
         folderId: { type: 'string', description: 'Folder ID to list messages from' },
       },
@@ -275,7 +275,12 @@ const tools: Tool[] = [
       properties: {
         searchTerm: { type: 'string', description: 'Search term' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of results (default: 25, max: 50)', minimum: 1, maximum: 50 },
+        top: {
+          type: 'number',
+          description: 'Number of results (default: 25, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['searchTerm'],
@@ -290,7 +295,12 @@ const tools: Tool[] = [
       properties: {
         filter: { type: 'string', description: 'OData filter' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of folders (default: 20, max: 50)', minimum: 1, maximum: 50 },
+        top: {
+          type: 'number',
+          description: 'Number of folders (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
     },
@@ -356,7 +366,8 @@ const tools: Tool[] = [
   },
   {
     name: 'get_well_known_folder',
-    description: 'Get well-known folder (inbox, sentitems, deleteditems, drafts, outbox, junkemail)',
+    description:
+      'Get well-known folder (inbox, sentitems, deleteditems, drafts, outbox, junkemail)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -375,7 +386,12 @@ const tools: Tool[] = [
       type: 'object',
       properties: {
         messageId: { type: 'string', description: 'Message ID' },
-        top: { type: 'number', description: 'Number of attachments (default: 10, max: 25)', minimum: 1, maximum: 25 },
+        top: {
+          type: 'number',
+          description: 'Number of attachments (default: 10, max: 25)',
+          minimum: 1,
+          maximum: 25,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['messageId'],
@@ -390,7 +406,12 @@ const tools: Tool[] = [
         folderId: { type: 'string', description: 'Parent folder ID' },
         filter: { type: 'string', description: 'OData filter' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of folders (default: 20, max: 50)', minimum: 1, maximum: 50 },
+        top: {
+          type: 'number',
+          description: 'Number of folders (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['folderId'],
@@ -403,7 +424,12 @@ const tools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        top: { type: 'number', description: 'Number of rules (default: 10, max: 25)', minimum: 1, maximum: 25 },
+        top: {
+          type: 'number',
+          description: 'Number of rules (default: 10, max: 25)',
+          minimum: 1,
+          maximum: 25,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
     },
@@ -442,7 +468,12 @@ const tools: Tool[] = [
       type: 'object',
       properties: {
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of calendars (default: 20, max: 50)', minimum: 1, maximum: 50 },
+        top: {
+          type: 'number',
+          description: 'Number of calendars (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
     },
@@ -453,10 +484,18 @@ const tools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        calendarId: { type: 'string', description: 'Calendar ID (optional; defaults to primary calendar)' },
+        calendarId: {
+          type: 'string',
+          description: 'Calendar ID (optional; defaults to primary calendar)',
+        },
         filter: { type: 'string', description: 'OData filter query' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of events (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        top: {
+          type: 'number',
+          description: 'Number of events (default: 25, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
         orderBy: { type: 'string', description: 'Field to order by (default: start/dateTime)' },
       },
@@ -468,11 +507,25 @@ const tools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        startDateTime: { type: 'string', description: 'Range start, ISO 8601 (e.g. 2026-06-26T00:00:00)' },
-        endDateTime: { type: 'string', description: 'Range end, ISO 8601 (e.g. 2026-07-03T00:00:00)' },
-        calendarId: { type: 'string', description: 'Calendar ID (optional; defaults to primary calendar)' },
+        startDateTime: {
+          type: 'string',
+          description: 'Range start, ISO 8601 (e.g. 2026-06-26T00:00:00)',
+        },
+        endDateTime: {
+          type: 'string',
+          description: 'Range end, ISO 8601 (e.g. 2026-07-03T00:00:00)',
+        },
+        calendarId: {
+          type: 'string',
+          description: 'Calendar ID (optional; defaults to primary calendar)',
+        },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of events (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        top: {
+          type: 'number',
+          description: 'Number of events (default: 25, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['startDateTime', 'endDateTime'],
@@ -508,8 +561,14 @@ const tools: Tool[] = [
           type: 'object',
           description: 'Start time',
           properties: {
-            dateTime: { type: 'string', description: 'ISO 8601 local datetime (e.g. 2026-06-26T14:00:00)' },
-            timeZone: { type: 'string', description: 'IANA/Windows time zone (e.g. America/Chicago)' },
+            dateTime: {
+              type: 'string',
+              description: 'ISO 8601 local datetime (e.g. 2026-06-26T14:00:00)',
+            },
+            timeZone: {
+              type: 'string',
+              description: 'IANA/Windows time zone (e.g. America/Chicago)',
+            },
           },
         },
         end: {
@@ -541,7 +600,10 @@ const tools: Tool[] = [
           },
         },
         isOnlineMeeting: { type: 'boolean', description: 'Create a Teams online meeting' },
-        calendarId: { type: 'string', description: 'Calendar ID (optional; defaults to primary calendar)' },
+        calendarId: {
+          type: 'string',
+          description: 'Calendar ID (optional; defaults to primary calendar)',
+        },
       },
       required: ['subject', 'start', 'end'],
     },
@@ -553,7 +615,10 @@ const tools: Tool[] = [
       type: 'object',
       properties: {
         eventId: { type: 'string', description: 'Event ID' },
-        updates: { type: 'object', description: 'Properties to update (subject, body, start, end, location, attendees, ...)' },
+        updates: {
+          type: 'object',
+          description: 'Properties to update (subject, body, start, end, location, attendees, ...)',
+        },
       },
       required: ['eventId', 'updates'],
     },
@@ -578,7 +643,10 @@ const tools: Tool[] = [
         eventId: { type: 'string', description: 'Event ID' },
         response: { type: 'string', enum: ['accept', 'decline', 'tentativelyAccept'] },
         comment: { type: 'string', description: 'Optional comment to include in the response' },
-        sendResponse: { type: 'boolean', description: 'Send a response to the organizer (default: true)' },
+        sendResponse: {
+          type: 'boolean',
+          description: 'Send a response to the organizer (default: true)',
+        },
       },
       required: ['eventId', 'response'],
     },
@@ -592,7 +660,12 @@ const tools: Tool[] = [
       properties: {
         filter: { type: 'string', description: 'OData filter query' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of contacts (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        top: {
+          type: 'number',
+          description: 'Number of contacts (default: 25, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
         orderBy: { type: 'string', description: 'Field to order by' },
       },
@@ -606,7 +679,12 @@ const tools: Tool[] = [
       properties: {
         searchTerm: { type: 'string', description: 'Search term' },
         select: { type: 'string', description: 'Fields to return' },
-        top: { type: 'number', description: 'Number of contacts (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        top: {
+          type: 'number',
+          description: 'Number of contacts (default: 25, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['searchTerm'],
@@ -689,13 +767,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       // Message operations
       case 'list_messages':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.listMessages(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await messageTools.listMessages(args as any)) },
+          ],
+        };
       case 'get_message':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.getMessage(args.messageId as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.getMessage(args.messageId as string, args as any),
+              ),
+            },
+          ],
+        };
       case 'create_message':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.createMessage(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await messageTools.createMessage(args as any)) },
+          ],
+        };
       case 'update_message':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.updateMessage(args.messageId as string, args.updates as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.updateMessage(args.messageId as string, args.updates as any),
+              ),
+            },
+          ],
+        };
       case 'delete_message':
         await messageTools.deleteMessage(args.messageId as string);
         return { content: [{ type: 'text', text: 'Message deleted successfully' }] };
@@ -719,82 +823,272 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         await messageTools.replyAllToMessage(args.messageId as string, args.comment as string);
         return { content: [{ type: 'text', text: 'Reply all sent successfully' }] };
       case 'forward_message':
-        await messageTools.forwardMessage(args.messageId as string, args.toRecipients as any[], args.comment as string);
+        await messageTools.forwardMessage(
+          args.messageId as string,
+          args.toRecipients as any[],
+          args.comment as string,
+        );
         return { content: [{ type: 'text', text: 'Message forwarded successfully' }] };
       case 'move_message':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.moveMessage(args.messageId as string, args.destinationId as string)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.moveMessage(
+                  args.messageId as string,
+                  args.destinationId as string,
+                ),
+              ),
+            },
+          ],
+        };
       case 'copy_message':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.copyMessage(args.messageId as string, args.destinationId as string)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.copyMessage(
+                  args.messageId as string,
+                  args.destinationId as string,
+                ),
+              ),
+            },
+          ],
+        };
       case 'search_messages':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.searchMessages(args.searchTerm as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.searchMessages(args.searchTerm as string, args as any),
+              ),
+            },
+          ],
+        };
 
       // Folder operations
       case 'list_mail_folders':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.listMailFolders(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await folderTools.listMailFolders(args as any)) },
+          ],
+        };
       case 'get_mail_folder':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.getMailFolder(args.folderId as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await folderTools.getMailFolder(args.folderId as string, args as any),
+              ),
+            },
+          ],
+        };
       case 'create_mail_folder':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.createMailFolder(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await folderTools.createMailFolder(args as any)) },
+          ],
+        };
       case 'update_mail_folder':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.updateMailFolder(args.folderId as string, { displayName: args.displayName as string })) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await folderTools.updateMailFolder(args.folderId as string, {
+                  displayName: args.displayName as string,
+                }),
+              ),
+            },
+          ],
+        };
       case 'delete_mail_folder':
         await folderTools.deleteMailFolder(args.folderId as string);
         return { content: [{ type: 'text', text: 'Folder deleted successfully' }] };
       case 'move_mail_folder':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.moveMailFolder(args.folderId as string, args.destinationId as string)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await folderTools.moveMailFolder(
+                  args.folderId as string,
+                  args.destinationId as string,
+                ),
+              ),
+            },
+          ],
+        };
       case 'get_well_known_folder':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.getWellKnownFolder(args.folderName as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await folderTools.getWellKnownFolder(args.folderName as any)),
+            },
+          ],
+        };
 
       // Attachment operations
       case 'list_attachments':
-        return { content: [{ type: 'text', text: JSON.stringify(await messageTools.listAttachments(args.messageId as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.listAttachments(args.messageId as string, args as any),
+              ),
+            },
+          ],
+        };
 
       // Child folder operations
       case 'list_child_folders':
-        return { content: [{ type: 'text', text: JSON.stringify(await folderTools.listChildFolders(args.folderId as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await folderTools.listChildFolders(args.folderId as string, args as any),
+              ),
+            },
+          ],
+        };
 
       // Rule operations
       case 'list_message_rules':
-        return { content: [{ type: 'text', text: JSON.stringify(await ruleTools.listMessageRules(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await ruleTools.listMessageRules(args as any)) },
+          ],
+        };
       case 'create_message_rule':
-        return { content: [{ type: 'text', text: JSON.stringify(await ruleTools.createMessageRule(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await ruleTools.createMessageRule(args as any)) },
+          ],
+        };
       case 'delete_message_rule':
         await ruleTools.deleteMessageRule(args.ruleId as string);
         return { content: [{ type: 'text', text: 'Rule deleted successfully' }] };
 
       // Calendar operations
       case 'list_calendars':
-        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.listCalendars(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await calendarTools.listCalendars(args as any)) },
+          ],
+        };
       case 'list_events':
-        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.listEvents(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await calendarTools.listEvents(args as any)) },
+          ],
+        };
       case 'get_calendar_view':
-        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.getCalendarView(args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await calendarTools.getCalendarView(args as any)),
+            },
+          ],
+        };
       case 'get_event':
-        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.getEvent(args.eventId as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await calendarTools.getEvent(args.eventId as string, args as any),
+              ),
+            },
+          ],
+        };
       case 'create_event': {
         const { calendarId, ...event } = args as any;
-        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.createEvent(event, calendarId)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await calendarTools.createEvent(event, calendarId)),
+            },
+          ],
+        };
       }
       case 'update_event':
-        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.updateEvent(args.eventId as string, args.updates as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await calendarTools.updateEvent(args.eventId as string, args.updates as any),
+              ),
+            },
+          ],
+        };
       case 'delete_event':
         await calendarTools.deleteEvent(args.eventId as string);
         return { content: [{ type: 'text', text: 'Event deleted successfully' }] };
       case 'respond_to_event':
-        await calendarTools.respondToEvent(args.eventId as string, args.response as any, args.comment as string, (args.sendResponse as boolean) ?? true);
+        await calendarTools.respondToEvent(
+          args.eventId as string,
+          args.response as any,
+          args.comment as string,
+          (args.sendResponse as boolean) ?? true,
+        );
         return { content: [{ type: 'text', text: `Event ${args.response} sent successfully` }] };
 
       // Contacts operations
       case 'list_contacts':
-        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.listContacts(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await contactsTools.listContacts(args as any)) },
+          ],
+        };
       case 'search_contacts':
-        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.searchContacts(args.searchTerm as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await contactsTools.searchContacts(args.searchTerm as string, args as any),
+              ),
+            },
+          ],
+        };
       case 'get_contact':
-        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.getContact(args.contactId as string, args as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await contactsTools.getContact(args.contactId as string, args as any),
+              ),
+            },
+          ],
+        };
       case 'create_contact':
-        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.createContact(args as any)) }] };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await contactsTools.createContact(args as any)) },
+          ],
+        };
       case 'update_contact':
-        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.updateContact(args.contactId as string, args.updates as any)) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await contactsTools.updateContact(args.contactId as string, args.updates as any),
+              ),
+            },
+          ],
+        };
       case 'delete_contact':
         await contactsTools.deleteContact(args.contactId as string);
         return { content: [{ type: 'text', text: 'Contact deleted successfully' }] };

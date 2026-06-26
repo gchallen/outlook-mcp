@@ -108,11 +108,13 @@ GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,MailboxSettings.ReadWrite
 ## Step 6: Test Your Configuration
 
 1. **Build the Project**
+
    ```bash
    npm run build
    ```
 
 2. **Run the Server**
+
    ```bash
    npx outlook-mcp
    ```
@@ -147,6 +149,7 @@ GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,MailboxSettings.ReadWrite
 ### Issue: "The application 'XXX' is not registered in directory 'YYY'"
 
 **Solution**:
+
 - Verify your `AZURE_TENANT_ID` is correct
 - Ensure the app is registered in the correct tenant
 - Check if you need to use "common" as the tenant ID for multi-tenant apps
@@ -154,6 +157,7 @@ GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,MailboxSettings.ReadWrite
 ### Issue: "Invalid client secret"
 
 **Solution**:
+
 - Verify the `AZURE_CLIENT_SECRET` is copied correctly
 - Check if the secret has expired
 - Create a new client secret if needed
@@ -161,6 +165,7 @@ GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,MailboxSettings.ReadWrite
 ### Issue: Authentication timeout or device code issues
 
 **Solution**:
+
 - Try using client secret authentication instead
 - Check your network connectivity
 - Verify the tenant ID is correct

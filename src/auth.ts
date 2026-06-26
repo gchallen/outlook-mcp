@@ -59,8 +59,7 @@ export class GraphAuthProvider implements AuthenticationProvider {
 
   constructor(config: AuthConfig) {
     this.scopes = config.scopes ?? DEFAULT_SCOPES;
-    const cachePath =
-      config.cachePath ?? path.join(process.cwd(), '.token-cache.json');
+    const cachePath = config.cachePath ?? path.join(process.cwd(), '.token-cache.json');
 
     this.pca = new PublicClientApplication({
       auth: {

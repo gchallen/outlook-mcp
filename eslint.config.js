@@ -22,6 +22,9 @@ export default [
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
+      // TypeScript performs its own undefined-identifier checking, so the core
+      // no-undef rule is redundant (and flags Node/Jest globals as false positives).
+      'no-undef': 'off',
       'prettier/prettier': 'error',
     },
   },

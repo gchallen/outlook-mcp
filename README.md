@@ -5,11 +5,14 @@ A Model Context Protocol (MCP) server that provides access to Microsoft Outlook 
 ## Features
 
 - **Message Management**: List, read, create, update, delete, send, reply, and forward messages
+- **Calendar**: List calendars, list/view events, create, update, delete events, and RSVP to invites
+- **Contacts**: List, search, read, create, update, and delete contacts
 - **Folder Operations**: Create, manage, and organize mail folders
 - **Search Functionality**: Search through messages with advanced filtering
 - **Attachment Support**: List, add, and manage email attachments
 - **Message Rules**: Create and manage inbox rules for automatic message processing
 - **Well-Known Folders**: Access standard folders like Inbox, Sent Items, Drafts, etc.
+- **Automatic Signature**: Outgoing mail, drafts, replies, and forwards get the configured signature appended automatically
 - **Automatic Pagination**: All list operations include built-in pagination to prevent excessive context generation
 
 ## Installation
@@ -37,18 +40,30 @@ npm run build
 
 ## Configuration
 
+> **Setting this up locally for Claude Code?** Follow [SETUP.md](./SETUP.md) for
+> exact, copy-paste install steps (clone → build → sign in → register). The
+> notes below are the reference for the configuration it uses.
+
 ### Environment Variables
 
-Create a `.env` file in your project root or set the following environment variables:
+Create a `.env` file in your project root:
 
 ```bash
 AZURE_CLIENT_ID=your_client_id_here
 AZURE_TENANT_ID=your_tenant_id_here
-AZURE_CLIENT_SECRET=your_client_secret_here
-GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,MailboxSettings.ReadWrite
+# Optional; defaults to Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,User.Read
+# GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,User.Read
 ```
 
-See [INSTRUCTIONS.md](./INSTRUCTIONS.md) for detailed instructions on obtaining these credentials.
+Authentication uses the **device-code flow** (no client secret). The Azure app
+registration must have **"Allow public client flows" = Yes** and the matching
+delegated Graph permissions. See [INSTRUCTIONS.md](./INSTRUCTIONS.md) for how to
+create such a registration.
+
+You authenticate once with `npm run login`, which caches a refresh token to
+`.token-cache.json` (gitignored). An optional `OUTLOOK_TOKEN_CACHE` env var
+overrides where that cache lives — useful when Claude Code launches the server
+from a different working directory.
 
 ## Usage
 
@@ -96,6 +111,26 @@ npx outlook-mcp
 - `create_message_rule` - Create a new inbox message rule
 - `delete_message_rule` - Delete an inbox message rule
 
+#### Calendar Tools
+
+- `list_calendars` - List the user's calendars (paginated, default: 20, max: 50)
+- `list_events` - List events from the default or a specific calendar (paginated, default: 25, max: 100)
+- `get_calendar_view` - List events within a date/time range, expanding recurring series into occurrences
+- `get_event` - Get a specific event by ID
+- `create_event` - Create a calendar event (supports attendees, location, online meeting)
+- `update_event` - Update an event's properties
+- `delete_event` - Delete an event
+- `respond_to_event` - Accept, decline, or tentatively accept a meeting invitation
+
+#### Contacts Tools
+
+- `list_contacts` - List contacts (paginated, default: 25, max: 100)
+- `search_contacts` - Search contacts (paginated, default: 25, max: 100)
+- `get_contact` - Get a specific contact by ID
+- `create_contact` - Create a new contact
+- `update_contact` - Update a contact's properties
+- `delete_contact` - Delete a contact
+
 ## Examples
 
 ### List Recent Messages
@@ -104,7 +139,7 @@ npx outlook-mcp
 // Lists the 10 most recent messages with pagination info
 const result = await messageTools.listMessages({
   top: 10,
-  orderBy: 'receivedDateTime desc'
+  orderBy: 'receivedDateTime desc',
 });
 
 // Result includes pagination metadata:
@@ -126,7 +161,7 @@ console.log(`Found ${result.value.length} messages`);
 if (result['@odata.nextLink']) {
   const nextResult = await messageTools.listMessages({
     top: 25,
-    skip: 25
+    skip: 25,
   });
   console.log(`Next page has ${nextResult.value.length} messages`);
 }
@@ -140,15 +175,17 @@ await messageTools.sendMail({
     subject: 'Hello from MCP!',
     body: {
       contentType: 'html',
-      content: '<p>This email was sent via the Outlook MCP server.</p>'
+      content: '<p>This email was sent via the Outlook MCP server.</p>',
     },
-    toRecipients: [{
-      emailAddress: {
-        address: 'recipient@example.com',
-        name: 'Recipient Name'
-      }
-    }]
-  }
+    toRecipients: [
+      {
+        emailAddress: {
+          address: 'recipient@example.com',
+          name: 'Recipient Name',
+        },
+      },
+    ],
+  },
 });
 ```
 
@@ -157,7 +194,7 @@ await messageTools.sendMail({
 ```typescript
 await folderTools.createMailFolder({
   displayName: 'Important Projects',
-  parentFolderId: 'inbox' // Optional: create as subfolder
+  parentFolderId: 'inbox', // Optional: create as subfolder
 });
 ```
 
@@ -172,6 +209,7 @@ const results = await messageTools.searchMessages('from:boss@company.com subject
 All list operations in this MCP server include automatic pagination to prevent excessive context generation:
 
 ### Default Limits
+
 - **Messages**: 25 per page (max: 100)
 - **Search Results**: 25 per page (max: 50)
 - **Folders**: 20 per page (max: 50)
@@ -179,7 +217,9 @@ All list operations in this MCP server include automatic pagination to prevent e
 - **Attachments**: 10 per page (max: 25)
 
 ### Response Format
+
 All paginated operations return an object with:
+
 ```typescript
 {
   value: [...items...],           // Array of actual results
@@ -189,7 +229,9 @@ All paginated operations return an object with:
 ```
 
 ### Pagination Parameters
+
 Use `top` and `skip` parameters to control pagination:
+
 - `top`: Number of items to return (respects maximum limits)
 - `skip`: Number of items to skip (for getting subsequent pages)
 
@@ -222,20 +264,25 @@ npm run typecheck
 
 ## Authentication
 
-This server supports two authentication methods:
+This server uses the **device-code flow** (a delegated, public-client OAuth
+flow). Run `npm run login` once: it prints a URL and a short code, you sign in
+through a browser, and a refresh token is cached to `.token-cache.json`. After
+that the server refreshes access tokens silently — no client secret involved.
 
-1. **Client Secret Flow** (recommended for automated scenarios)
-2. **Device Code Flow** (for interactive authentication)
-
-The authentication method is automatically determined based on whether `AZURE_CLIENT_SECRET` is provided.
+Delegated (`/me`) Graph endpoints require a user token, which is exactly what
+device-code provides. A client-secret/application token would not work for the
+`/me/...` calls this server makes.
 
 ## Permissions
 
-The following Microsoft Graph permissions are required:
+The following delegated Microsoft Graph permissions are used:
 
 - `Mail.ReadWrite` - Read and write access to user mail
 - `Mail.Send` - Send mail as the user
-- `MailboxSettings.ReadWrite` - Read and write mailbox settings
+- `Calendars.ReadWrite` - Read and write calendar events
+- `Contacts.ReadWrite` - Read and write contacts
+- `User.Read` - Read the signed-in user's profile
+- `offline_access` - Obtain refresh tokens for silent re-authentication
 
 ## Security
 

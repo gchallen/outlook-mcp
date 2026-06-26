@@ -4,11 +4,14 @@ export default {
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', {
-      tsconfig: {
-        module: 'CommonJS',
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          module: 'CommonJS',
+        },
       },
-    }],
+    ],
   },
   // Allow source files that import with explicit .js extensions to resolve.
   moduleNameMapper: {
