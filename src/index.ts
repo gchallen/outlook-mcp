@@ -10,6 +10,8 @@ import { GraphAuthProvider } from './auth.js';
 import { MessageTools } from './tools/message-tools.js';
 import { FolderTools } from './tools/folder-tools.js';
 import { RuleTools } from './tools/rule-tools.js';
+import { CalendarTools } from './tools/calendar-tools.js';
+import { ContactsTools } from './tools/contacts-tools.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
@@ -39,23 +41,23 @@ const server = new Server(
 let messageTools: MessageTools;
 let folderTools: FolderTools;
 let ruleTools: RuleTools;
+let calendarTools: CalendarTools;
+let contactsTools: ContactsTools;
 
 async function initializeGraphClient() {
   const authProvider = new GraphAuthProvider({
     clientId: process.env.AZURE_CLIENT_ID || '',
     tenantId: process.env.AZURE_TENANT_ID,
-    clientSecret: process.env.AZURE_CLIENT_SECRET,
-    scopes: process.env.GRAPH_SCOPES?.split(',') || [
-      'Mail.ReadWrite',
-      'Mail.Send',
-      'MailboxSettings.ReadWrite',
-    ],
+    scopes: process.env.GRAPH_SCOPES?.split(','),
+    cachePath: process.env.OUTLOOK_TOKEN_CACHE,
   });
 
   const client = authProvider.getClient();
   messageTools = new MessageTools(client);
   folderTools = new FolderTools(client);
   ruleTools = new RuleTools(client);
+  calendarTools = new CalendarTools(client);
+  contactsTools = new ContactsTools(client);
 }
 
 const tools: Tool[] = [
@@ -432,6 +434,244 @@ const tools: Tool[] = [
       required: ['ruleId'],
     },
   },
+  // Calendar Tools
+  {
+    name: 'list_calendars',
+    description: 'List the user calendars with pagination',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        select: { type: 'string', description: 'Fields to return' },
+        top: { type: 'number', description: 'Number of calendars (default: 20, max: 50)', minimum: 1, maximum: 50 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+      },
+    },
+  },
+  {
+    name: 'list_events',
+    description: 'List events from the default or a specific calendar with pagination',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        calendarId: { type: 'string', description: 'Calendar ID (optional; defaults to primary calendar)' },
+        filter: { type: 'string', description: 'OData filter query' },
+        select: { type: 'string', description: 'Fields to return' },
+        top: { type: 'number', description: 'Number of events (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+        orderBy: { type: 'string', description: 'Field to order by (default: start/dateTime)' },
+      },
+    },
+  },
+  {
+    name: 'get_calendar_view',
+    description: 'Get events within a date/time range, expanding recurring series into occurrences',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startDateTime: { type: 'string', description: 'Range start, ISO 8601 (e.g. 2026-06-26T00:00:00)' },
+        endDateTime: { type: 'string', description: 'Range end, ISO 8601 (e.g. 2026-07-03T00:00:00)' },
+        calendarId: { type: 'string', description: 'Calendar ID (optional; defaults to primary calendar)' },
+        select: { type: 'string', description: 'Fields to return' },
+        top: { type: 'number', description: 'Number of events (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+      },
+      required: ['startDateTime', 'endDateTime'],
+    },
+  },
+  {
+    name: 'get_event',
+    description: 'Get a specific calendar event by ID',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        eventId: { type: 'string', description: 'Event ID' },
+        select: { type: 'string', description: 'Fields to return' },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'create_event',
+    description: 'Create a calendar event',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject: { type: 'string', description: 'Event title' },
+        body: {
+          type: 'object',
+          properties: {
+            contentType: { type: 'string', enum: ['text', 'html'] },
+            content: { type: 'string' },
+          },
+        },
+        start: {
+          type: 'object',
+          description: 'Start time',
+          properties: {
+            dateTime: { type: 'string', description: 'ISO 8601 local datetime (e.g. 2026-06-26T14:00:00)' },
+            timeZone: { type: 'string', description: 'IANA/Windows time zone (e.g. America/Chicago)' },
+          },
+        },
+        end: {
+          type: 'object',
+          description: 'End time',
+          properties: {
+            dateTime: { type: 'string', description: 'ISO 8601 local datetime' },
+            timeZone: { type: 'string', description: 'IANA/Windows time zone' },
+          },
+        },
+        location: {
+          type: 'object',
+          properties: { displayName: { type: 'string' } },
+        },
+        attendees: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              emailAddress: {
+                type: 'object',
+                properties: {
+                  address: { type: 'string' },
+                  name: { type: 'string' },
+                },
+              },
+              type: { type: 'string', enum: ['required', 'optional', 'resource'] },
+            },
+          },
+        },
+        isOnlineMeeting: { type: 'boolean', description: 'Create a Teams online meeting' },
+        calendarId: { type: 'string', description: 'Calendar ID (optional; defaults to primary calendar)' },
+      },
+      required: ['subject', 'start', 'end'],
+    },
+  },
+  {
+    name: 'update_event',
+    description: 'Update properties of a calendar event',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        eventId: { type: 'string', description: 'Event ID' },
+        updates: { type: 'object', description: 'Properties to update (subject, body, start, end, location, attendees, ...)' },
+      },
+      required: ['eventId', 'updates'],
+    },
+  },
+  {
+    name: 'delete_event',
+    description: 'Delete a calendar event',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        eventId: { type: 'string', description: 'Event ID' },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'respond_to_event',
+    description: 'Accept, decline, or tentatively accept a meeting invitation',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        eventId: { type: 'string', description: 'Event ID' },
+        response: { type: 'string', enum: ['accept', 'decline', 'tentativelyAccept'] },
+        comment: { type: 'string', description: 'Optional comment to include in the response' },
+        sendResponse: { type: 'boolean', description: 'Send a response to the organizer (default: true)' },
+      },
+      required: ['eventId', 'response'],
+    },
+  },
+  // Contacts Tools
+  {
+    name: 'list_contacts',
+    description: 'List contacts with pagination',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filter: { type: 'string', description: 'OData filter query' },
+        select: { type: 'string', description: 'Fields to return' },
+        top: { type: 'number', description: 'Number of contacts (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+        orderBy: { type: 'string', description: 'Field to order by' },
+      },
+    },
+  },
+  {
+    name: 'search_contacts',
+    description: 'Search contacts with pagination',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        searchTerm: { type: 'string', description: 'Search term' },
+        select: { type: 'string', description: 'Fields to return' },
+        top: { type: 'number', description: 'Number of contacts (default: 25, max: 100)', minimum: 1, maximum: 100 },
+        skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
+      },
+      required: ['searchTerm'],
+    },
+  },
+  {
+    name: 'get_contact',
+    description: 'Get a specific contact by ID',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string', description: 'Contact ID' },
+        select: { type: 'string', description: 'Fields to return' },
+      },
+      required: ['contactId'],
+    },
+  },
+  {
+    name: 'create_contact',
+    description: 'Create a new contact',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        givenName: { type: 'string' },
+        surname: { type: 'string' },
+        emailAddresses: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              address: { type: 'string' },
+              name: { type: 'string' },
+            },
+          },
+        },
+        businessPhones: { type: 'array', items: { type: 'string' } },
+        mobilePhone: { type: 'string' },
+        companyName: { type: 'string' },
+        jobTitle: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'update_contact',
+    description: 'Update properties of a contact',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string', description: 'Contact ID' },
+        updates: { type: 'object', description: 'Properties to update' },
+      },
+      required: ['contactId', 'updates'],
+    },
+  },
+  {
+    name: 'delete_contact',
+    description: 'Delete a contact',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string', description: 'Contact ID' },
+      },
+      required: ['contactId'],
+    },
+  },
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -521,6 +761,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'delete_message_rule':
         await ruleTools.deleteMessageRule(args.ruleId as string);
         return { content: [{ type: 'text', text: 'Rule deleted successfully' }] };
+
+      // Calendar operations
+      case 'list_calendars':
+        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.listCalendars(args as any)) }] };
+      case 'list_events':
+        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.listEvents(args as any)) }] };
+      case 'get_calendar_view':
+        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.getCalendarView(args as any)) }] };
+      case 'get_event':
+        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.getEvent(args.eventId as string, args as any)) }] };
+      case 'create_event': {
+        const { calendarId, ...event } = args as any;
+        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.createEvent(event, calendarId)) }] };
+      }
+      case 'update_event':
+        return { content: [{ type: 'text', text: JSON.stringify(await calendarTools.updateEvent(args.eventId as string, args.updates as any)) }] };
+      case 'delete_event':
+        await calendarTools.deleteEvent(args.eventId as string);
+        return { content: [{ type: 'text', text: 'Event deleted successfully' }] };
+      case 'respond_to_event':
+        await calendarTools.respondToEvent(args.eventId as string, args.response as any, args.comment as string, (args.sendResponse as boolean) ?? true);
+        return { content: [{ type: 'text', text: `Event ${args.response} sent successfully` }] };
+
+      // Contacts operations
+      case 'list_contacts':
+        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.listContacts(args as any)) }] };
+      case 'search_contacts':
+        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.searchContacts(args.searchTerm as string, args as any)) }] };
+      case 'get_contact':
+        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.getContact(args.contactId as string, args as any)) }] };
+      case 'create_contact':
+        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.createContact(args as any)) }] };
+      case 'update_contact':
+        return { content: [{ type: 'text', text: JSON.stringify(await contactsTools.updateContact(args.contactId as string, args.updates as any)) }] };
+      case 'delete_contact':
+        await contactsTools.deleteContact(args.contactId as string);
+        return { content: [{ type: 'text', text: 'Contact deleted successfully' }] };
 
       default:
         throw new Error(`Unknown tool: ${name}`);

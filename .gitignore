@@ -8,6 +8,9 @@ yarn-error.log*
 dist/
 build/
 
+# Cached MSAL tokens (contains refresh tokens — never commit)
+.token-cache.json
+
 # Environment variables
 .env
 .env.local
