@@ -1,5 +1,6 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Message, Attachment } from '@microsoft/microsoft-graph-types';
+import { withSignature } from '../signature.js';
 
 // Pagination limits to prevent excessive context generation
 const PAGINATION_LIMITS = {
@@ -55,7 +56,10 @@ export class MessageTools {
   }
 
   async createMessage(message: Partial<Message>): Promise<Message> {
-    return await this.client.api('/me/messages').post(message);
+    return await this.client.api('/me/messages').post({
+      ...message,
+      body: withSignature(message.body as any) ?? message.body,
+    });
   }
 
   async updateMessage(messageId: string, updates: Partial<Message>): Promise<Message> {
@@ -74,7 +78,13 @@ export class MessageTools {
     message: Partial<Message>;
     saveToSentItems?: boolean;
   }): Promise<void> {
-    await this.client.api('/me/sendMail').post(message);
+    await this.client.api('/me/sendMail').post({
+      ...message,
+      message: {
+        ...message.message,
+        body: withSignature(message.message.body as any) ?? message.message.body,
+      },
+    });
   }
 
   async replyToMessage(
