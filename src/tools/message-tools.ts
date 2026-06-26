@@ -1,6 +1,6 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Message, Attachment } from '@microsoft/microsoft-graph-types';
-import { withSignature } from '../signature.js';
+import { withSignature, injectReplyTop } from '../signature.js';
 
 // Pagination limits to prevent excessive context generation
 const PAGINATION_LIMITS = {
@@ -87,15 +87,37 @@ export class MessageTools {
     });
   }
 
+  /**
+   * Create a draft (reply/replyAll/forward), inject the comment + signature
+   * above the quoted thread, optionally set additional properties, then send.
+   * This is used instead of the one-shot reply/forward actions so the styled
+   * signature lands in the body.
+   */
+  private async createInjectAndSend(
+    messageId: string,
+    action: 'createReply' | 'createReplyAll' | 'createForward',
+    comment?: string,
+    updates?: Partial<Message>,
+  ): Promise<void> {
+    const draft: Message = await this.client
+      .api(`/me/messages/${messageId}/${action}`)
+      .post({});
+
+    const body = injectReplyTop(draft.body as any, comment);
+    await this.client.api(`/me/messages/${draft.id}`).patch({
+      ...updates,
+      body,
+    });
+
+    await this.client.api(`/me/messages/${draft.id}/send`).post({});
+  }
+
   async replyToMessage(
     messageId: string,
     comment?: string,
     message?: Partial<Message>,
   ): Promise<void> {
-    await this.client.api(`/me/messages/${messageId}/reply`).post({
-      comment,
-      message,
-    });
+    await this.createInjectAndSend(messageId, 'createReply', comment, message);
   }
 
   async replyAllToMessage(
@@ -103,10 +125,7 @@ export class MessageTools {
     comment?: string,
     message?: Partial<Message>,
   ): Promise<void> {
-    await this.client.api(`/me/messages/${messageId}/replyAll`).post({
-      comment,
-      message,
-    });
+    await this.createInjectAndSend(messageId, 'createReplyAll', comment, message);
   }
 
   async forwardMessage(
@@ -115,10 +134,9 @@ export class MessageTools {
     comment?: string,
     message?: Partial<Message>,
   ): Promise<void> {
-    await this.client.api(`/me/messages/${messageId}/forward`).post({
+    await this.createInjectAndSend(messageId, 'createForward', comment, {
       toRecipients,
-      comment,
-      message,
+      ...message,
     });
   }
 

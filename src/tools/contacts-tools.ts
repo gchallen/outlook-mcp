@@ -40,11 +40,14 @@ export class ContactsTools {
     };
   }
 
-  async searchContacts(searchTerm: string, params?: {
-    select?: string;
-    top?: number;
-    skip?: number;
-  }): Promise<{
+  async searchContacts(
+    searchTerm: string,
+    params?: {
+      select?: string;
+      top?: number;
+      skip?: number;
+    },
+  ): Promise<{
     value: Contact[];
     '@odata.nextLink'?: string;
     '@odata.count'?: number;

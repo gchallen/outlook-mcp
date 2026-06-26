@@ -12,12 +12,19 @@ export const SIGNATURE_HTML =
 
 export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
 
+// Shared inline style matching the user's body/signature text.
+const BODY_STYLE = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt; color:rgb(51,51,51)';
+
 // Marker used to detect an already-signed body and avoid double-signing.
 const SIGNATURE_MARKER = 'geoffreychallen.com';
 
 interface MessageBody {
   contentType?: string;
   content?: string;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -43,4 +50,42 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
     contentType: body.contentType ?? 'text',
     content: content ? `${content}\n\n${SIGNATURE_TEXT}` : SIGNATURE_TEXT,
   };
+}
+
+/**
+ * Build the top portion of a reply/forward body: an optional comment followed
+ * by the signature, in the user's style. `comment` is treated as plain text.
+ */
+export function buildReplyTopHtml(comment?: string): string {
+  const commentHtml = comment
+    ? `<div style="${BODY_STYLE}">${escapeHtml(comment).replace(/\n/g, '<br>')}</div>`
+    : '';
+  return commentHtml + SIGNATURE_HTML;
+}
+
+/**
+ * Inject comment + signature into the draft body produced by Graph's
+ * createReply/createReplyAll/createForward (which contains the quoted thread).
+ * The new content is placed at the top, above the quoted history.
+ */
+export function injectReplyTop(draftBody: MessageBody | undefined, comment?: string): MessageBody {
+  const content = draftBody?.content ?? '';
+  const contentType = (draftBody?.contentType ?? 'html').toLowerCase();
+
+  if (contentType !== 'html') {
+    const top = comment ? `${comment}\n\n${SIGNATURE_TEXT}` : SIGNATURE_TEXT;
+    return { contentType: draftBody?.contentType ?? 'text', content: `${top}\n\n${content}` };
+  }
+
+  const top = buildReplyTopHtml(comment);
+  const bodyOpen = content.match(/<body[^>]*>/i);
+  if (bodyOpen && bodyOpen.index !== undefined) {
+    const insertAt = bodyOpen.index + bodyOpen[0].length;
+    return {
+      contentType: 'html',
+      content: content.slice(0, insertAt) + top + content.slice(insertAt),
+    };
+  }
+
+  return { contentType: 'html', content: top + content };
 }

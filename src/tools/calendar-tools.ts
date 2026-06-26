@@ -10,11 +10,7 @@ const PAGINATION_LIMITS = {
 export class CalendarTools {
   constructor(private client: Client) {}
 
-  async listCalendars(params?: {
-    select?: string;
-    top?: number;
-    skip?: number;
-  }): Promise<{
+  async listCalendars(params?: { select?: string; top?: number; skip?: number }): Promise<{
     value: Calendar[];
     '@odata.nextLink'?: string;
     '@odata.count'?: number;
@@ -93,12 +89,10 @@ export class CalendarTools {
       ? `/me/calendars/${params.calendarId}/calendarView`
       : '/me/calendarView';
 
-    const request = this.client
-      .api(endpoint)
-      .query({
-        startDateTime: params.startDateTime,
-        endDateTime: params.endDateTime,
-      });
+    const request = this.client.api(endpoint).query({
+      startDateTime: params.startDateTime,
+      endDateTime: params.endDateTime,
+    });
 
     if (params.select) request.select(params.select);
     const topLimit = Math.min(
@@ -124,9 +118,7 @@ export class CalendarTools {
   }
 
   async createEvent(event: Partial<Event>, calendarId?: string): Promise<Event> {
-    const endpoint = calendarId
-      ? `/me/calendars/${calendarId}/events`
-      : '/me/events';
+    const endpoint = calendarId ? `/me/calendars/${calendarId}/events` : '/me/events';
     return await this.client.api(endpoint).post(event);
   }
 

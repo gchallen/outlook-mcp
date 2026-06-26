@@ -1,17 +1,16 @@
 export default {
-  preset: 'ts-jest/presets/default-esm',
-  extensionsToTreatAsEsm: ['.ts'],
+  preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      useESM: true,
       tsconfig: {
-        module: 'ES2020',
+        module: 'CommonJS',
       },
     }],
   },
+  // Allow source files that import with explicit .js extensions to resolve.
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
@@ -20,5 +19,7 @@ export default {
     '!src/**/*.d.ts',
     '!src/**/*.test.ts',
     '!src/**/*.spec.ts',
+    '!src/index.ts',
+    '!src/login.ts',
   ],
 };

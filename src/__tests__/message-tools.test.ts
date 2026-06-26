@@ -1,19 +1,20 @@
 import { MessageTools } from '../tools/message-tools';
+import { SIGNATURE_HTML, SIGNATURE_TEXT } from '../signature';
 import { Client } from '@microsoft/microsoft-graph-client';
 
 jest.mock('@microsoft/microsoft-graph-client');
 
 describe('MessageTools', () => {
   let messageTools: MessageTools;
-  let mockClient: jest.Mocked<Client>;
-  let mockRequest: jest.MockedFunction<any>;
+  let mockClient: Client;
+  let mockRequest: any;
 
   beforeEach(() => {
     mockRequest = {
       get: jest.fn(),
-      post: jest.fn(),
-      patch: jest.fn(),
-      delete: jest.fn(),
+      post: jest.fn().mockResolvedValue(undefined),
+      patch: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue(undefined),
       filter: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       top: jest.fn().mockReturnThis(),
@@ -23,48 +24,33 @@ describe('MessageTools', () => {
       search: jest.fn().mockReturnThis(),
     };
 
-    mockClient = {
-      api: jest.fn(() => mockRequest),
-    } as any;
-
+    mockClient = { api: jest.fn(() => mockRequest) } as any;
     messageTools = new MessageTools(mockClient);
   });
 
   describe('listMessages', () => {
-    it('should list messages from inbox by default', async () => {
-      const mockMessages = [{ id: '1', subject: 'Test Message' }];
-      const mockResponse = { value: mockMessages, '@odata.nextLink': undefined, '@odata.count': undefined };
-      mockRequest.get.mockResolvedValue(mockResponse);
-
+    it('lists from inbox/messages by default and caps top at the default', async () => {
+      mockRequest.get.mockResolvedValue({ value: [{ id: '1' }] });
       const result = await messageTools.listMessages();
-
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
-      expect(result).toEqual({
-        value: mockMessages,
-        '@odata.nextLink': undefined,
-        '@odata.count': undefined,
-      });
+      expect(mockRequest.top).toHaveBeenCalledWith(25);
+      expect(result.value).toEqual([{ id: '1' }]);
     });
 
-    it('should list messages from specific folder', async () => {
-      const mockMessages = [{ id: '1', subject: 'Test Message' }];
-      const mockResponse = { value: mockMessages, '@odata.nextLink': undefined, '@odata.count': undefined };
-      mockRequest.get.mockResolvedValue(mockResponse);
-
-      const result = await messageTools.listMessages({ folderId: 'folder123' });
-
-      expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/folder123/messages');
-      expect(result).toEqual({
-        value: mockMessages,
-        '@odata.nextLink': undefined,
-        '@odata.count': undefined,
-      });
+    it('lists from a specific folder', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.listMessages({ folderId: 'f1' });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/f1/messages');
     });
 
-    it('should apply query parameters', async () => {
-      const mockMessages = [{ id: '1', subject: 'Test Message' }];
-      mockRequest.get.mockResolvedValue({ value: mockMessages });
+    it('clamps top to the maximum of 100', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.listMessages({ top: 5000 });
+      expect(mockRequest.top).toHaveBeenCalledWith(100);
+    });
 
+    it('applies all query parameters', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
       await messageTools.listMessages({
         filter: 'isRead eq false',
         select: 'id,subject',
@@ -72,83 +58,245 @@ describe('MessageTools', () => {
         skip: 5,
         orderBy: 'receivedDateTime desc',
       });
-
       expect(mockRequest.filter).toHaveBeenCalledWith('isRead eq false');
       expect(mockRequest.select).toHaveBeenCalledWith('id,subject');
       expect(mockRequest.top).toHaveBeenCalledWith(10);
       expect(mockRequest.skip).toHaveBeenCalledWith(5);
       expect(mockRequest.orderby).toHaveBeenCalledWith('receivedDateTime desc');
     });
+
+    it('passes through pagination metadata', async () => {
+      mockRequest.get.mockResolvedValue({
+        value: [{ id: '1' }],
+        '@odata.nextLink': 'next',
+        '@odata.count': 42,
+      });
+      const result = await messageTools.listMessages();
+      expect(result['@odata.nextLink']).toBe('next');
+      expect(result['@odata.count']).toBe(42);
+    });
   });
 
   describe('getMessage', () => {
-    it('should get a specific message', async () => {
-      const mockMessage = { id: '1', subject: 'Test Message' };
-      mockRequest.get.mockResolvedValue(mockMessage);
-
-      const result = await messageTools.getMessage('1');
-
+    it('gets a message and applies select/expand', async () => {
+      mockRequest.get.mockResolvedValue({ id: '1' });
+      const result = await messageTools.getMessage('1', {
+        select: 'subject',
+        expand: 'attachments',
+      });
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1');
-      expect(result).toEqual(mockMessage);
+      expect(mockRequest.select).toHaveBeenCalledWith('subject');
+      expect(mockRequest.expand).toHaveBeenCalledWith('attachments');
+      expect(result).toEqual({ id: '1' });
     });
   });
 
   describe('createMessage', () => {
-    it('should create a new message', async () => {
-      const messageData = { subject: 'New Message', body: { content: 'Test' } };
-      const mockCreatedMessage = { id: '123', ...messageData };
-      mockRequest.post.mockResolvedValue(mockCreatedMessage);
-
-      const result = await messageTools.createMessage(messageData);
-
+    it('creates a draft and appends the signature to an HTML body', async () => {
+      mockRequest.post.mockResolvedValue({ id: '123' });
+      await messageTools.createMessage({
+        subject: 'Hi',
+        body: { contentType: 'html', content: '<p>Body</p>' },
+      });
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
-      expect(mockRequest.post).toHaveBeenCalledWith(messageData);
-      expect(result).toEqual(mockCreatedMessage);
+      const posted = mockRequest.post.mock.calls[0][0];
+      expect(posted.subject).toBe('Hi');
+      expect(posted.body.content).toBe('<p>Body</p>' + SIGNATURE_HTML);
+    });
+
+    it('leaves a body undefined when none is provided', async () => {
+      mockRequest.post.mockResolvedValue({ id: '123' });
+      await messageTools.createMessage({ subject: 'No body' });
+      const posted = mockRequest.post.mock.calls[0][0];
+      expect(posted.body).toBeUndefined();
     });
   });
 
-  describe('sendMail', () => {
-    it('should send mail directly', async () => {
-      const mailData = {
-        message: {
-          subject: 'Test Email',
-          body: { content: 'Test content' },
-          toRecipients: [{ emailAddress: { address: 'test@example.com' } }],
-        },
-        saveToSentItems: true,
-      };
-
-      await messageTools.sendMail(mailData);
-
-      expect(mockClient.api).toHaveBeenCalledWith('/me/sendMail');
-      expect(mockRequest.post).toHaveBeenCalledWith(mailData);
+  describe('updateMessage', () => {
+    it('patches a message', async () => {
+      mockRequest.patch.mockResolvedValue({ id: '1', isRead: true });
+      const result = await messageTools.updateMessage('1', { isRead: true });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1');
+      expect(mockRequest.patch).toHaveBeenCalledWith({ isRead: true });
+      expect(result).toEqual({ id: '1', isRead: true });
     });
   });
 
   describe('deleteMessage', () => {
-    it('should delete a message', async () => {
+    it('deletes a message', async () => {
       await messageTools.deleteMessage('123');
-
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages/123');
       expect(mockRequest.delete).toHaveBeenCalled();
     });
   });
 
-  describe('searchMessages', () => {
-    it('should search messages', async () => {
-      const mockResults = [{ id: '1', subject: 'Found Message' }];
-      const mockResponse = { value: mockResults, '@odata.nextLink': undefined, '@odata.count': undefined };
-      mockRequest.get.mockResolvedValue(mockResponse);
+  describe('sendMessage', () => {
+    it('sends an existing draft', async () => {
+      await messageTools.sendMessage('123');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/123/send');
+      expect(mockRequest.post).toHaveBeenCalledWith({});
+    });
+  });
 
-      const result = await messageTools.searchMessages('test query');
-
-      expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
-      expect(mockRequest.search).toHaveBeenCalledWith('test query');
-      expect(result).toEqual({
-        value: mockResults,
-        '@odata.nextLink': undefined,
-        '@odata.count': undefined,
+  describe('sendMail', () => {
+    it('appends the signature to the outgoing HTML body', async () => {
+      await messageTools.sendMail({
+        message: {
+          subject: 'Test',
+          body: { contentType: 'html', content: '<p>Hello</p>' },
+          toRecipients: [{ emailAddress: { address: 'a@b.com' } }],
+        },
+        saveToSentItems: true,
       });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/sendMail');
+      const posted = mockRequest.post.mock.calls[0][0];
+      expect(posted.saveToSentItems).toBe(true);
+      expect(posted.message.body.content).toBe('<p>Hello</p>' + SIGNATURE_HTML);
+      expect(posted.message.subject).toBe('Test');
+    });
+
+    it('appends the text signature to a plain-text body', async () => {
+      await messageTools.sendMail({
+        message: { subject: 'Test', body: { contentType: 'text', content: 'Hello' } },
+      });
+      const posted = mockRequest.post.mock.calls[0][0];
+      expect(posted.message.body.content).toBe(`Hello\n\n${SIGNATURE_TEXT}`);
+    });
+  });
+
+  describe('reply / replyAll / forward', () => {
+    const draftBody = {
+      contentType: 'html',
+      content: '<html><body><div id="divRplyFwdMsg">original</div></body></html>',
+    };
+
+    beforeEach(() => {
+      // First post() returns the created draft; later posts (send) return undefined.
+      mockRequest.post.mockReset();
+      mockRequest.post
+        .mockResolvedValueOnce({ id: 'draft1', body: draftBody })
+        .mockResolvedValue(undefined);
+      mockRequest.patch.mockResolvedValue(undefined);
+    });
+
+    it('replyToMessage creates a draft, injects the signature, and sends', async () => {
+      await messageTools.replyToMessage('m1', 'Thanks!');
+
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/m1/createReply');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/draft1');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/draft1/send');
+
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.body.content).toContain('Thanks!');
+      expect(patched.body.content).toContain('geoffreychallen.com');
+      // Signature sits above the quoted thread.
+      expect(patched.body.content.indexOf('geoffreychallen.com')).toBeLessThan(
+        patched.body.content.indexOf('divRplyFwdMsg'),
+      );
+    });
+
+    it('replyAllToMessage uses the createReplyAll action', async () => {
+      await messageTools.replyAllToMessage('m1', 'Got it');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/m1/createReplyAll');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/draft1/send');
+    });
+
+    it('forwardMessage sets recipients on the draft and forwards', async () => {
+      const recipients = [{ emailAddress: { address: 'fwd@example.com' } }];
+      await messageTools.forwardMessage('m1', recipients, 'FYI');
+
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/m1/createForward');
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.toRecipients).toEqual(recipients);
+      expect(patched.body.content).toContain('FYI');
+      expect(patched.body.content).toContain('geoffreychallen.com');
+    });
+  });
+
+  describe('moveMessage / copyMessage', () => {
+    it('moves a message', async () => {
+      mockRequest.post.mockResolvedValue({ id: 'new' });
+      const result = await messageTools.moveMessage('1', 'dest');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/move');
+      expect(mockRequest.post).toHaveBeenCalledWith({ destinationId: 'dest' });
+      expect(result).toEqual({ id: 'new' });
+    });
+
+    it('copies a message', async () => {
+      mockRequest.post.mockResolvedValue({ id: 'copy' });
+      const result = await messageTools.copyMessage('1', 'dest');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/copy');
+      expect(mockRequest.post).toHaveBeenCalledWith({ destinationId: 'dest' });
+      expect(result).toEqual({ id: 'copy' });
+    });
+  });
+
+  describe('permanentDeleteMessage', () => {
+    it('permanently deletes a message', async () => {
+      await messageTools.permanentDeleteMessage('1');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/permanentDelete');
+      expect(mockRequest.post).toHaveBeenCalledWith({});
+    });
+  });
+
+  describe('searchMessages', () => {
+    it('searches messages and clamps to the search max of 50', async () => {
+      mockRequest.get.mockResolvedValue({ value: [{ id: '1' }] });
+      const result = await messageTools.searchMessages('hello', { top: 999 });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
+      expect(mockRequest.search).toHaveBeenCalledWith('hello');
+      expect(mockRequest.top).toHaveBeenCalledWith(50);
+      expect(result.value).toEqual([{ id: '1' }]);
+    });
+  });
+
+  describe('getMessageDelta', () => {
+    it('uses the plain delta endpoint with no token', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.getMessageDelta();
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/delta');
+    });
+
+    it('includes a delta token when provided', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.getMessageDelta({ deltaToken: 'abc' });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/delta?$deltatoken=abc');
+    });
+
+    it('includes a skip token when provided', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.getMessageDelta({ skipToken: 'xyz' });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/delta?$skiptoken=xyz');
+    });
+  });
+
+  describe('attachments', () => {
+    it('lists attachments and clamps top to the max of 25', async () => {
+      mockRequest.get.mockResolvedValue({ value: [{ id: 'a' }] });
+      await messageTools.listAttachments('1', { top: 100 });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments');
+      expect(mockRequest.top).toHaveBeenCalledWith(25);
+    });
+
+    it('gets a single attachment', async () => {
+      mockRequest.get.mockResolvedValue({ id: 'a' });
+      const result = await messageTools.getAttachment('1', 'a');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments/a');
+      expect(result).toEqual({ id: 'a' });
+    });
+
+    it('adds an attachment', async () => {
+      const attachment = { name: 'file.txt' };
+      mockRequest.post.mockResolvedValue({ id: 'a' });
+      await messageTools.addAttachment('1', attachment);
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments');
+      expect(mockRequest.post).toHaveBeenCalledWith(attachment);
+    });
+
+    it('deletes an attachment', async () => {
+      await messageTools.deleteAttachment('1', 'a');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments/a');
+      expect(mockRequest.delete).toHaveBeenCalled();
     });
   });
 });
