@@ -15,6 +15,25 @@ A Model Context Protocol (MCP) server that provides access to Microsoft Outlook 
 - **Automatic Signature**: Outgoing mail, drafts, replies, and forwards get the configured signature appended automatically
 - **Automatic Pagination**: All list operations include built-in pagination to prevent excessive context generation
 
+## Message formatting (lists & signatures)
+
+Email bodies take a `body.contentType` of either `"text"` or `"html"`:
+
+- **Use `"html"` for any bulleted or numbered lists or other rich formatting.**
+  Wrap items in `<ul><li>…</li></ul>` (or `<ol><li>…</li></ol>`) and paragraphs
+  in `<p>`. A plain `"text"` body renders a leading `-` as a literal dash — it
+  does **not** become a bullet.
+- **Signatures:** `create_message`, `send_mail`, and the reply/forward tools
+  append the configured signature automatically — the styled HTML signature for
+  `"html"` bodies, the plain-text signature for `"text"` bodies. A body that
+  already contains the signature (detected by the `geoffreychallen.com` marker)
+  is left untouched, so it is never doubled.
+- **`update_message` writes the body verbatim** and does **not** inject a
+  signature. When you replace a draft's body, include the full HTML and the
+  signature yourself. Note: editing a draft can rotate its message ID, so
+  re-fetch the draft (via `list_messages`/`get_message`) before a follow-up
+  `update_message`.
+
 ## Installation
 
 ### Prerequisites

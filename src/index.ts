@@ -95,7 +95,8 @@ const tools: Tool[] = [
   },
   {
     name: 'create_message',
-    description: 'Create a draft message',
+    description:
+      'Create a draft message. To render bulleted or numbered lists (or any rich formatting), set body.contentType to "html" and use <ul><li>...</li></ul> or <ol><li>...</li></ol> with <p> for paragraphs. A plain "text" body renders a leading "-" as a literal dash, not a bullet. HTML bodies also get the styled HTML email signature appended automatically; "text" bodies get the plain-text signature.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -104,7 +105,11 @@ const tools: Tool[] = [
           type: 'object',
           properties: {
             contentType: { type: 'string', enum: ['text', 'html'] },
-            content: { type: 'string' },
+            content: {
+              type: 'string',
+              description:
+                'Body content. For lists/formatting use contentType "html" with <ul>/<li> or <ol>/<li>; markdown-style "-" bullets do NOT render in a "text" body.',
+            },
           },
         },
         toRecipients: {
@@ -130,7 +135,8 @@ const tools: Tool[] = [
   },
   {
     name: 'update_message',
-    description: 'Update message properties',
+    description:
+      'Update message properties (PATCH, written verbatim). Unlike create_message/send_mail, the body is NOT run through the signature helper — when replacing a body, include the full HTML and the signature yourself, and use contentType "html" with <ul>/<li> for lists. Note: editing a draft can rotate its message ID, so re-fetch the draft (list/get) before a follow-up update.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -164,7 +170,8 @@ const tools: Tool[] = [
   },
   {
     name: 'send_mail',
-    description: 'Send a new email directly',
+    description:
+      'Send a new email directly. Same formatting rules as create_message: for bulleted/numbered lists set body.contentType to "html" and use <ul>/<li> or <ol>/<li> — a "text" body renders "-" as a literal dash. HTML bodies get the styled signature; "text" bodies get the plain-text signature.',
     inputSchema: {
       type: 'object',
       properties: {
