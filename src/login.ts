@@ -3,7 +3,7 @@ import { GraphAuthProvider, DEFAULT_SCOPES } from './auth.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 async function main() {
   const clientId = process.env.AZURE_CLIENT_ID;

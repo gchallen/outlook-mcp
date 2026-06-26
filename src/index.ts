@@ -15,7 +15,10 @@ import { ContactsTools } from './tools/contacts-tools.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
-dotenv.config();
+// quiet: true suppresses dotenv's startup banner. On an MCP stdio server,
+// anything written to stdout that isn't JSON-RPC corrupts the protocol stream
+// and breaks the connection.
+dotenv.config({ quiet: true });
 
 const server = new Server(
   {
