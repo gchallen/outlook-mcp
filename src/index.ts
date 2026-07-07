@@ -96,7 +96,7 @@ const tools: Tool[] = [
   {
     name: 'create_message',
     description:
-      'Create a draft message. To render bulleted or numbered lists (or any rich formatting), set body.contentType to "html" and use <ul><li>...</li></ul> or <ol><li>...</li></ol> with <p> for paragraphs. A plain "text" body renders a leading "-" as a literal dash, not a bullet. HTML bodies also get the styled HTML email signature appended automatically; "text" bodies get the plain-text signature.',
+      'Create a draft message. To render bulleted or numbered lists (or any rich formatting), set body.contentType to "html" and use <ul><li>...</li></ul> or <ol><li>...</li></ol> with <p> for paragraphs. A plain "text" body renders a leading "-" as a literal dash, not a bullet. HTML bodies also get the styled HTML email signature appended automatically; "text" bodies get the plain-text signature. Prefer contentType "html" so the auto-appended signature keeps its styled hyperlink; a plain "text" body produces an unlinked signature. Do not write your own closing sign-off such as "Best, <name>", because the server appends the signature that closes the message.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -171,7 +171,7 @@ const tools: Tool[] = [
   {
     name: 'send_mail',
     description:
-      'Send a new email directly. Same formatting rules as create_message: for bulleted/numbered lists set body.contentType to "html" and use <ul>/<li> or <ol>/<li> — a "text" body renders "-" as a literal dash. HTML bodies get the styled signature; "text" bodies get the plain-text signature.',
+      'Send a new email directly. Same formatting rules as create_message: for bulleted/numbered lists set body.contentType to "html" and use <ul>/<li> or <ol>/<li> — a "text" body renders "-" as a literal dash. HTML bodies get the styled signature; "text" bodies get the plain-text signature. Prefer contentType "html" so the auto-appended signature keeps its styled hyperlink; a plain "text" body produces an unlinked signature. Do not write your own closing sign-off such as "Best, <name>", because the server appends the signature that closes the message.',
     inputSchema: {
       type: 'object',
       properties: {
