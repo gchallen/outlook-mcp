@@ -38,6 +38,20 @@ let ruleTools: RuleTools;
 let calendarTools: CalendarTools;
 let contactsTools: ContactsTools;
 
+// Trim a draft message down to the fields worth surfacing after creating a
+// reply draft, avoiding a dump of the full quoted-thread HTML body.
+function summarizeDraft(draft: any) {
+  return {
+    id: draft?.id,
+    subject: draft?.subject,
+    isDraft: draft?.isDraft,
+    webLink: draft?.webLink,
+    toRecipients: draft?.toRecipients,
+    ccRecipients: draft?.ccRecipients,
+    bodyPreview: draft?.bodyPreview,
+  };
+}
+
 async function initializeGraphClient() {
   const authProvider = new GraphAuthProvider({
     clientId: process.env.AZURE_CLIENT_ID || '',
@@ -223,6 +237,42 @@ const tools: Tool[] = [
       properties: {
         messageId: { type: 'string', description: 'Message ID to reply to' },
         comment: { type: 'string', description: 'Reply comment' },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'reply_to_message_draft',
+    description:
+      'Create a reply draft (to sender only) without sending it. Returns the draft so it can be reviewed and sent later.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to reply to' },
+        comment: { type: 'string', description: 'Reply body' },
+        contentType: {
+          type: 'string',
+          enum: ['text', 'html'],
+          description: 'How to treat comment (default text). Use html to preserve rich formatting.',
+        },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'reply_all_to_message_draft',
+    description:
+      'Create a reply-all draft without sending it. Returns the draft so it can be reviewed and sent later.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to reply to' },
+        comment: { type: 'string', description: 'Reply body' },
+        contentType: {
+          type: 'string',
+          enum: ['text', 'html'],
+          description: 'How to treat comment (default text). Use html to preserve rich formatting.',
+        },
       },
       required: ['messageId'],
     },
@@ -832,6 +882,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'reply_all_to_message':
         await messageTools.replyAllToMessage(args.messageId as string, args.comment as string);
         return { content: [{ type: 'text', text: 'Reply all sent successfully' }] };
+      case 'reply_to_message_draft': {
+        const draft = await messageTools.replyToMessageDraft(
+          args.messageId as string,
+          args.comment as string,
+          (args.contentType as string) === 'html',
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(summarizeDraft(draft)) }] };
+      }
+      case 'reply_all_to_message_draft': {
+        const draft = await messageTools.replyAllToMessageDraft(
+          args.messageId as string,
+          args.comment as string,
+          (args.contentType as string) === 'html',
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(summarizeDraft(draft)) }] };
+      }
       case 'forward_message':
         await messageTools.forwardMessage(
           args.messageId as string,

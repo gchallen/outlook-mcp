@@ -211,6 +211,37 @@ describe('MessageTools', () => {
       expect(patched.body.content).toContain('FYI');
       expect(patched.body.content).toContain('geoffreychallen.com');
     });
+
+    it('replyAllToMessageDraft creates + injects a draft but does NOT send', async () => {
+      const draft = await messageTools.replyAllToMessageDraft('m1', 'Got it');
+
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/m1/createReplyAll');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/draft1');
+      // Never sends.
+      expect(mockClient.api).not.toHaveBeenCalledWith('/me/messages/draft1/send');
+
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.body.content).toContain('Got it');
+      expect(patched.body.content).toContain('geoffreychallen.com');
+      // Returns the draft with a stable id for later review/send.
+      expect(draft.id).toBe('draft1');
+    });
+
+    it('replyToMessageDraft with html=true preserves raw markup (no escaping)', async () => {
+      await messageTools.replyToMessageDraft('m1', '<ul><li>one</li></ul>', true);
+
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.body.content).toContain('<ul><li>one</li></ul>');
+      expect(patched.body.content).not.toContain('&lt;ul&gt;');
+      expect(mockClient.api).not.toHaveBeenCalledWith('/me/messages/draft1/send');
+    });
+
+    it('replyToMessageDraft with plain text escapes markup', async () => {
+      await messageTools.replyToMessageDraft('m1', '<b>hi</b>');
+
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.body.content).toContain('&lt;b&gt;hi&lt;/b&gt;');
+    });
   });
 
   describe('moveMessage / copyMessage', () => {

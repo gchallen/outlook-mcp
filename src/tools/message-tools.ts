@@ -92,9 +92,34 @@ export class MessageTools {
 
   /**
    * Create a draft (reply/replyAll/forward), inject the comment + signature
-   * above the quoted thread, optionally set additional properties, then send.
-   * This is used instead of the one-shot reply/forward actions so the styled
-   * signature lands in the body.
+   * above the quoted thread, and optionally set additional properties. The
+   * draft is left in the Drafts folder (not sent) and returned. Using the
+   * create* actions (rather than the one-shot reply/forward actions) preserves
+   * threading and recipients while letting the styled signature land in the body.
+   * `opts.raw` treats `comment` as pre-formatted HTML instead of plain text.
+   */
+  private async createReplyDraft(
+    messageId: string,
+    action: 'createReply' | 'createReplyAll' | 'createForward',
+    comment?: string,
+    updates?: Partial<Message>,
+    opts?: { raw?: boolean },
+  ): Promise<Message> {
+    const draft: Message = await this.client.api(`/me/messages/${messageId}/${action}`).post({});
+
+    const body = injectReplyTop(draft.body as any, comment, opts);
+    const patched: Message = await this.client.api(`/me/messages/${draft.id}`).patch({
+      ...updates,
+      body,
+    });
+
+    // Graph returns the updated message on PATCH, but fall back to the created
+    // draft's id so downstream send/summary always has a stable identifier.
+    return { ...draft, ...patched, id: patched?.id ?? draft.id };
+  }
+
+  /**
+   * As createReplyDraft, but sends the draft after injecting the body.
    */
   private async createInjectAndSend(
     messageId: string,
@@ -102,14 +127,7 @@ export class MessageTools {
     comment?: string,
     updates?: Partial<Message>,
   ): Promise<void> {
-    const draft: Message = await this.client.api(`/me/messages/${messageId}/${action}`).post({});
-
-    const body = injectReplyTop(draft.body as any, comment);
-    await this.client.api(`/me/messages/${draft.id}`).patch({
-      ...updates,
-      body,
-    });
-
+    const draft = await this.createReplyDraft(messageId, action, comment, updates);
     await this.client.api(`/me/messages/${draft.id}/send`).post({});
   }
 
@@ -127,6 +145,34 @@ export class MessageTools {
     message?: Partial<Message>,
   ): Promise<void> {
     await this.createInjectAndSend(messageId, 'createReplyAll', comment, message);
+  }
+
+  /**
+   * Create a reply draft (to sender only) without sending it. Returns the draft
+   * so it can be reviewed, edited, or sent later. `html` treats `comment` as
+   * pre-formatted HTML so rich replies keep their formatting.
+   */
+  async replyToMessageDraft(
+    messageId: string,
+    comment?: string,
+    html?: boolean,
+    message?: Partial<Message>,
+  ): Promise<Message> {
+    return await this.createReplyDraft(messageId, 'createReply', comment, message, { raw: html });
+  }
+
+  /**
+   * Create a reply-all draft without sending it. Returns the draft so it can be
+   * reviewed, edited, or sent later. `html` treats `comment` as pre-formatted
+   * HTML so rich replies keep their formatting.
+   */
+  async replyAllToMessageDraft(
+    messageId: string,
+    comment?: string,
+    html?: boolean,
+    message?: Partial<Message>,
+  ): Promise<Message> {
+    return await this.createReplyDraft(messageId, 'createReplyAll', comment, message, { raw: html });
   }
 
   async forwardMessage(

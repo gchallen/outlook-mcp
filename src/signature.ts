@@ -54,11 +54,12 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
 
 /**
  * Build the top portion of a reply/forward body: an optional comment followed
- * by the signature, in the user's style. `comment` is treated as plain text.
+ * by the signature, in the user's style. `comment` is treated as plain text
+ * unless `opts.raw` is set, in which case it is inserted as-is (already HTML).
  */
-export function buildReplyTopHtml(comment?: string): string {
+export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): string {
   const commentHtml = comment
-    ? `<div style="${BODY_STYLE}">${escapeHtml(comment).replace(/\n/g, '<br>')}</div>`
+    ? `<div style="${BODY_STYLE}">${opts?.raw ? comment : escapeHtml(comment).replace(/\n/g, '<br>')}</div>`
     : '';
   return commentHtml + SIGNATURE_HTML;
 }
@@ -68,7 +69,11 @@ export function buildReplyTopHtml(comment?: string): string {
  * createReply/createReplyAll/createForward (which contains the quoted thread).
  * The new content is placed at the top, above the quoted history.
  */
-export function injectReplyTop(draftBody: MessageBody | undefined, comment?: string): MessageBody {
+export function injectReplyTop(
+  draftBody: MessageBody | undefined,
+  comment?: string,
+  opts?: { raw?: boolean },
+): MessageBody {
   const content = draftBody?.content ?? '';
   const contentType = (draftBody?.contentType ?? 'html').toLowerCase();
 
@@ -77,7 +82,7 @@ export function injectReplyTop(draftBody: MessageBody | undefined, comment?: str
     return { contentType: draftBody?.contentType ?? 'text', content: `${top}\n\n${content}` };
   }
 
-  const top = buildReplyTopHtml(comment);
+  const top = buildReplyTopHtml(comment, opts);
   const bodyOpen = content.match(/<body[^>]*>/i);
   if (bodyOpen && bodyOpen.index !== undefined) {
     const insertAt = bodyOpen.index + bodyOpen[0].length;
