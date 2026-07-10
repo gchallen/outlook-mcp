@@ -1,6 +1,31 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Message, Attachment } from '@microsoft/microsoft-graph-types';
 import { withSignature, injectReplyTop } from '../signature.js';
+import { readFile } from 'fs/promises';
+import { basename, extname } from 'path';
+
+// Threshold above which a file must be uploaded via a Graph upload session
+// rather than a single POST (3 MiB).
+const SIMPLE_ATTACHMENT_MAX_BYTES = 3145728;
+
+// Upload-session chunk size. Must be a multiple of 320 KiB (327680 bytes);
+// this is ~4.7 MiB (15 * 320 KiB).
+const UPLOAD_CHUNK_SIZE = 15 * 327680;
+
+// Minimal extension -> MIME map for locally-attached files.
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  '.zip': 'application/zip',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.html': 'text/html',
+  '.webm': 'video/webm',
+};
+
+function contentTypeForFile(filePath: string): string {
+  return EXTENSION_MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+}
 
 // Pagination limits to prevent excessive context generation
 const PAGINATION_LIMITS = {
@@ -289,5 +314,73 @@ export class MessageTools {
 
   async deleteAttachment(messageId: string, attachmentId: string): Promise<void> {
     await this.client.api(`/me/messages/${messageId}/attachments/${attachmentId}`).delete();
+  }
+
+  /**
+   * Attach a local file to a message/draft by absolute path. Small files
+   * (<= 3 MiB) are attached with a single POST; larger files are uploaded in
+   * sequential chunks via a Graph upload session (the pre-authenticated
+   * uploadUrl must NOT carry a Graph Authorization header).
+   */
+  async addFileAttachment(
+    messageId: string,
+    filePath: string,
+  ): Promise<{ name: string; size: number; method: 'simple' | 'upload-session' }> {
+    const data = await readFile(filePath);
+    const name = basename(filePath);
+    const size = data.byteLength;
+    const contentType = contentTypeForFile(filePath);
+
+    if (size <= SIMPLE_ATTACHMENT_MAX_BYTES) {
+      await this.client.api(`/me/messages/${messageId}/attachments`).post({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name,
+        contentType,
+        contentBytes: data.toString('base64'),
+      });
+      return { name, size, method: 'simple' };
+    }
+
+    // Large file: create an upload session, then PUT the bytes in chunks.
+    const session = await this.client
+      .api(`/me/messages/${messageId}/attachments/createUploadSession`)
+      .post({
+        AttachmentItem: {
+          attachmentType: 'file',
+          name,
+          size,
+          contentType,
+        },
+      });
+
+    const uploadUrl: string = session.uploadUrl;
+    if (!uploadUrl) {
+      throw new Error('createUploadSession did not return an uploadUrl.');
+    }
+
+    for (let start = 0; start < size; start += UPLOAD_CHUNK_SIZE) {
+      const end = Math.min(start + UPLOAD_CHUNK_SIZE, size) - 1;
+      const chunk = data.subarray(start, end + 1);
+
+      // The uploadUrl is pre-authenticated; do NOT attach a Graph/Authorization
+      // header.
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Length': String(chunk.byteLength),
+          'Content-Range': `bytes ${start}-${end}/${size}`,
+        },
+        body: chunk,
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(
+          `Upload session chunk failed (bytes ${start}-${end}/${size}): HTTP ${response.status} ${text}`,
+        );
+      }
+    }
+
+    return { name, size, method: 'upload-session' };
   }
 }

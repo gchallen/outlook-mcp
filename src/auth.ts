@@ -14,6 +14,7 @@ export const DEFAULT_SCOPES = [
   'Mail.Send',
   'Calendars.ReadWrite',
   'Contacts.ReadWrite',
+  'People.Read',
   'User.Read',
 ];
 

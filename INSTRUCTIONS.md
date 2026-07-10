@@ -2,6 +2,10 @@
 
 This guide will walk you through setting up the necessary Azure App Registration and permissions to use the Outlook MCP Server.
 
+## Email Conventions
+
+- Email subjects should use Title Case.
+
 ## Prerequisites
 
 - An Azure account with access to Azure Active Directory

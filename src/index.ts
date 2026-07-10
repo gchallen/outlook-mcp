@@ -12,6 +12,7 @@ import { FolderTools } from './tools/folder-tools.js';
 import { RuleTools } from './tools/rule-tools.js';
 import { CalendarTools } from './tools/calendar-tools.js';
 import { ContactsTools } from './tools/contacts-tools.js';
+import { PeopleTools } from './tools/people-tools.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
@@ -37,6 +38,7 @@ let folderTools: FolderTools;
 let ruleTools: RuleTools;
 let calendarTools: CalendarTools;
 let contactsTools: ContactsTools;
+let peopleTools: PeopleTools;
 
 // Trim a draft message down to the fields worth surfacing after creating a
 // reply draft, avoiding a dump of the full quoted-thread HTML body.
@@ -66,6 +68,7 @@ async function initializeGraphClient() {
   ruleTools = new RuleTools(client);
   calendarTools = new CalendarTools(client);
   contactsTools = new ContactsTools(client);
+  peopleTools = new PeopleTools(client);
 }
 
 const tools: Tool[] = [
@@ -110,7 +113,7 @@ const tools: Tool[] = [
   {
     name: 'create_message',
     description:
-      'Create a draft message. To render bulleted or numbered lists (or any rich formatting), set body.contentType to "html" and use <ul><li>...</li></ul> or <ol><li>...</li></ol> with <p> for paragraphs. A plain "text" body renders a leading "-" as a literal dash, not a bullet. HTML bodies also get the styled HTML email signature appended automatically; "text" bodies get the plain-text signature. Prefer contentType "html" so the auto-appended signature keeps its styled hyperlink; a plain "text" body produces an unlinked signature. Do not write your own closing sign-off such as "Best, <name>", because the server appends the signature that closes the message.',
+      'Create a draft message. To render bulleted or numbered lists (or any rich formatting), set body.contentType to "html" and use <ul><li>...</li></ul> or <ol><li>...</li></ol> with <p> for paragraphs. A plain "text" body renders a leading "-" as a literal dash, not a bullet. HTML bodies also get the styled HTML email signature appended automatically; "text" bodies get the plain-text signature. Prefer contentType "html" so the auto-appended signature keeps its styled hyperlink; a plain "text" body produces an unlinked signature. Do not write your own closing sign-off such as "Best, <name>", because the server appends the signature that closes the message. Use Title Case for the subject line.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -185,7 +188,7 @@ const tools: Tool[] = [
   {
     name: 'send_mail',
     description:
-      'Send a new email directly. Same formatting rules as create_message: for bulleted/numbered lists set body.contentType to "html" and use <ul>/<li> or <ol>/<li> — a "text" body renders "-" as a literal dash. HTML bodies get the styled signature; "text" bodies get the plain-text signature. Prefer contentType "html" so the auto-appended signature keeps its styled hyperlink; a plain "text" body produces an unlinked signature. Do not write your own closing sign-off such as "Best, <name>", because the server appends the signature that closes the message.',
+      'Send a new email directly. Same formatting rules as create_message: for bulleted/numbered lists set body.contentType to "html" and use <ul>/<li> or <ol>/<li> — a "text" body renders "-" as a literal dash. HTML bodies get the styled signature; "text" bodies get the plain-text signature. Prefer contentType "html" so the auto-appended signature keeps its styled hyperlink; a plain "text" body produces an unlinked signature. Do not write your own closing sign-off such as "Best, <name>", because the server appends the signature that closes the message. Use Title Case for the subject line.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -455,6 +458,19 @@ const tools: Tool[] = [
         skip: { type: 'number', description: 'Number to skip for pagination', minimum: 0 },
       },
       required: ['messageId'],
+    },
+  },
+  {
+    name: 'add_attachment',
+    description:
+      'Attach a local file to a message or draft by absolute path. Transparently handles large files (>3 MB) via a Microsoft Graph upload session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message or draft ID to attach the file to' },
+        filePath: { type: 'string', description: 'Absolute path to a local file' },
+      },
+      required: ['messageId', 'filePath'],
     },
   },
   {
@@ -751,6 +767,24 @@ const tools: Tool[] = [
     },
   },
   {
+    name: 'search_people',
+    description:
+      'Search the organization directory and relevant people via /me/people. Covers directory colleagues and frequently-contacted people, so this is the right tool when search_contacts (the personal Contacts folder) returns nothing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        searchTerm: { type: 'string', description: 'Search term' },
+        top: {
+          type: 'number',
+          description: 'Number of people to return (default: 10, max: 25)',
+          minimum: 1,
+          maximum: 25,
+        },
+      },
+      required: ['searchTerm'],
+    },
+  },
+  {
     name: 'get_contact',
     description: 'Get a specific contact by ID',
     inputSchema: {
@@ -1021,6 +1055,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+      case 'add_attachment':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.addFileAttachment(
+                  args.messageId as string,
+                  args.filePath as string,
+                ),
+              ),
+            },
+          ],
+        };
 
       // Child folder operations
       case 'list_child_folders':
@@ -1133,6 +1181,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: 'text',
               text: JSON.stringify(
                 await contactsTools.searchContacts(args.searchTerm as string, args as any),
+              ),
+            },
+          ],
+        };
+      case 'search_people':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await peopleTools.searchPeople(args.searchTerm as string, args as any),
               ),
             },
           ],
