@@ -53,6 +53,19 @@ describe('signature', () => {
     });
   });
 
+  describe('SIGNATURE_HTML', () => {
+    it('dims the name with opacity instead of a hardcoded gray', () => {
+      expect(SIGNATURE_HTML).toContain('opacity:0.6');
+      expect(SIGNATURE_HTML).not.toContain('rgb(102,102,102)');
+      expect(SIGNATURE_HTML).not.toContain('rgb(51,51,51)');
+    });
+
+    it('keeps an explicit blue link affordance', () => {
+      expect(SIGNATURE_HTML).toContain('color:rgb(12,100,192)');
+      expect(SIGNATURE_HTML).toContain('href="https://geoffreychallen.com"');
+    });
+  });
+
   describe('buildReplyTopHtml', () => {
     it('includes only the signature when there is no comment', () => {
       expect(buildReplyTopHtml()).toBe(SIGNATURE_HTML);
