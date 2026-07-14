@@ -53,14 +53,39 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
 }
 
 /**
+ * Graph's reply/forward skeleton carries `<style>p{margin-top:0;margin-bottom:0}</style>`
+ * in its <head>, which collapses the vertical spacing between <p> paragraphs in an
+ * injected HTML comment so they render as one run-on block. Inline styles win over that
+ * <style> reset in Outlook and other clients, so give every <p> that lacks an explicit
+ * margin a bottom margin. This keeps authored `<p>`-per-paragraph HTML rendering with
+ * real paragraph breaks without the caller hand-inserting blank `<div><br></div>` lines.
+ */
+export function ensureParagraphSpacing(html: string): string {
+  return html.replace(/<(p)(\s[^>]*)?>/gi, (match, tag: string, attrs?: string) => {
+    const a = attrs ?? '';
+    const styleMatch = a.match(/\bstyle\s*=\s*("|')([\s\S]*?)\1/i);
+    if (styleMatch) {
+      // Respect an author-specified margin; otherwise merge one into the existing style.
+      if (/margin/i.test(styleMatch[2])) return match;
+      const merged = `${styleMatch[2].trim().replace(/;\s*$/, '')}; margin:0 0 1em 0`;
+      return `<${tag}${a.replace(styleMatch[0], `style="${merged}"`)}>`;
+    }
+    return `<${tag}${a} style="margin:0 0 1em 0">`;
+  });
+}
+
+/**
  * Build the top portion of a reply/forward body: an optional comment followed
  * by the signature, in the user's style. `comment` is treated as plain text
- * unless `opts.raw` is set, in which case it is inserted as-is (already HTML).
+ * unless `opts.raw` is set, in which case it is inserted as-is (already HTML),
+ * with paragraph spacing normalized so <p> blocks survive the reply skeleton's
+ * margin reset.
  */
 export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): string {
-  const commentHtml = comment
-    ? `<div style="${BODY_STYLE}">${opts?.raw ? comment : escapeHtml(comment).replace(/\n/g, '<br>')}</div>`
-    : '';
+  const inner = opts?.raw
+    ? ensureParagraphSpacing(comment ?? '')
+    : escapeHtml(comment ?? '').replace(/\n/g, '<br>');
+  const commentHtml = comment ? `<div style="${BODY_STYLE}">${inner}</div>` : '';
   return commentHtml + SIGNATURE_HTML;
 }
 

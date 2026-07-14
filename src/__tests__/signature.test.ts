@@ -4,6 +4,7 @@ import {
   withSignature,
   buildReplyTopHtml,
   injectReplyTop,
+  ensureParagraphSpacing,
 } from '../signature';
 
 describe('signature', () => {
@@ -66,6 +67,46 @@ describe('signature', () => {
     it('converts newlines in the comment to <br>', () => {
       const html = buildReplyTopHtml('line1\nline2');
       expect(html).toContain('line1<br>line2');
+    });
+
+    it('adds paragraph spacing to raw HTML <p> blocks so they survive the margin reset', () => {
+      const html = buildReplyTopHtml('<p>One</p><p>Two</p>', { raw: true });
+      expect(html).toContain('<p style="margin:0 0 1em 0">One</p>');
+      expect(html).toContain('<p style="margin:0 0 1em 0">Two</p>');
+    });
+  });
+
+  describe('ensureParagraphSpacing', () => {
+    it('gives a bare <p> a bottom margin', () => {
+      expect(ensureParagraphSpacing('<p>Hi</p>')).toBe('<p style="margin:0 0 1em 0">Hi</p>');
+    });
+
+    it('preserves other attributes while adding a margin', () => {
+      expect(ensureParagraphSpacing('<p class="x">Hi</p>')).toBe(
+        '<p class="x" style="margin:0 0 1em 0">Hi</p>',
+      );
+    });
+
+    it('merges a margin into an existing style that lacks one', () => {
+      expect(ensureParagraphSpacing('<p style="color:red">Hi</p>')).toBe(
+        '<p style="color:red; margin:0 0 1em 0">Hi</p>',
+      );
+    });
+
+    it('leaves an author-specified margin untouched', () => {
+      const html = '<p style="margin:2em 0">Hi</p>';
+      expect(ensureParagraphSpacing(html)).toBe(html);
+    });
+
+    it('is case-insensitive and handles multiple paragraphs', () => {
+      expect(ensureParagraphSpacing('<P>a</P><p>b</p>')).toBe(
+        '<P style="margin:0 0 1em 0">a</P><p style="margin:0 0 1em 0">b</p>',
+      );
+    });
+
+    it('does not touch non-paragraph tags', () => {
+      const html = '<ul><li>a</li></ul>';
+      expect(ensureParagraphSpacing(html)).toBe(html);
     });
   });
 
