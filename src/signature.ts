@@ -12,8 +12,18 @@ export const SIGNATURE_HTML =
 
 export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
 
-// Shared inline style matching the user's body/signature text.
-const BODY_STYLE = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt; color:rgb(51,51,51)';
+// Inline style for the comment wrapper. Deliberately sets NO text color: a
+// fixed color (e.g. #333) reads fine on white but stays dark in a client's dark
+// mode, where it can vanish against a dark background. Leaving color unset lets
+// the text inherit the client's default foreground (near-black in light mode,
+// near-white in dark mode). `opacity:0.8` then dims it relative to whatever
+// background is behind it, so it reads slightly softer in BOTH modes — and 0.8
+// over white is identical to the old #333. Outlook desktop ignores opacity and
+// simply shows full-contrast default text, which is a safe degradation.
+// `max-width` caps the line length for readability on wide screens; clients that
+// don't honor it fall back to full width.
+const BODY_STYLE =
+  'font-family:Arial,Helvetica,sans-serif; font-size:11pt; max-width:40em; opacity:0.8';
 
 // Marker used to detect an already-signed body and avoid double-signing.
 const SIGNATURE_MARKER = 'geoffreychallen.com';

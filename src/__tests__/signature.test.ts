@@ -74,6 +74,16 @@ describe('signature', () => {
       expect(html).toContain('<p style="margin:0 0 1em 0">One</p>');
       expect(html).toContain('<p style="margin:0 0 1em 0">Two</p>');
     });
+
+    it('wraps the comment with max-width and opacity but no hardcoded text color', () => {
+      const html = buildReplyTopHtml('Hi');
+      // Inspect just the comment wrapper, above the (separately styled) signature.
+      const commentPart = html.slice(0, html.indexOf(SIGNATURE_HTML));
+      expect(commentPart).toContain('max-width:40em');
+      expect(commentPart).toContain('opacity:0.8');
+      // No fixed color that would break the recipient's dark mode.
+      expect(commentPart).not.toContain('color:');
+    });
   });
 
   describe('ensureParagraphSpacing', () => {
