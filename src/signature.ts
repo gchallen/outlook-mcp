@@ -8,9 +8,12 @@
 // dim-on-dark. The URL keeps an explicit blue: a link needs a recognizable
 // color affordance, and clients expect/adjust link colors. Outlook desktop
 // ignores opacity and shows full-contrast default text — a safe degradation.
+//
+// No leading blank-line spacer: the body's last paragraph already carries a 1em
+// bottom margin (PARAGRAPH_BLOCK_STYLE), so a <br> here would stack a second empty
+// line above the signature. The margin supplies the single gap on its own.
 export const SIGNATURE_HTML =
   '<div id="Signature">' +
-  '<div style="font-family:Arial,Helvetica,sans-serif; font-size:11pt"><br></div>' +
   '<div style="font-family:Arial,Helvetica,sans-serif; font-size:11pt">' +
   '<span style="opacity:0.6">Geoffrey Challen&nbsp;// </span>' +
   '<a href="https://geoffreychallen.com" title="https://geoffreychallen.com" style="color:rgb(12,100,192)">https://geoffreychallen.com</a>' +
