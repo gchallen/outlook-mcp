@@ -31,6 +31,14 @@ export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
 const BODY_STYLE =
   'font-family:Arial,Helvetica,sans-serif; font-size:11pt; max-width:40em; opacity:0.8';
 
+// Block-level style applied to each authored <p>. A paragraph's line-height is
+// resolved from the *block's* font-size, not an inner <span>'s — and when Outlook
+// reflows an edited draft it tends to move font-size onto inline spans, leaving the
+// <p> block to fall back to the reply's 12pt default and render taller, uneven
+// leading. Pinning font-size AND an explicit line-height on the block keeps the
+// leading deterministic and consistent across paragraphs regardless of that reflow.
+const PARAGRAPH_BLOCK_STYLE = 'margin:0 0 1em 0; font-size:11pt; line-height:1.4';
+
 // Marker used to detect an already-signed body and avoid double-signing.
 const SIGNATURE_MARKER = 'geoffreychallen.com';
 
@@ -72,9 +80,10 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
  * Graph's reply/forward skeleton carries `<style>p{margin-top:0;margin-bottom:0}</style>`
  * in its <head>, which collapses the vertical spacing between <p> paragraphs in an
  * injected HTML comment so they render as one run-on block. Inline styles win over that
- * <style> reset in Outlook and other clients, so give every <p> that lacks an explicit
- * margin a bottom margin. This keeps authored `<p>`-per-paragraph HTML rendering with
- * real paragraph breaks without the caller hand-inserting blank `<div><br></div>` lines.
+ * <style> reset in Outlook and other clients, so give every bare <p> the block-level
+ * PARAGRAPH_BLOCK_STYLE (bottom margin for spacing, plus font-size and line-height so
+ * leading is deterministic and consistent). This keeps authored `<p>`-per-paragraph HTML
+ * rendering with real breaks and even leading, no hand-inserted `<div><br></div>` lines.
  */
 export function ensureParagraphSpacing(html: string): string {
   return html.replace(/<(p)(\s[^>]*)?>/gi, (match, tag: string, attrs?: string) => {
@@ -86,7 +95,7 @@ export function ensureParagraphSpacing(html: string): string {
       const merged = `${styleMatch[2].trim().replace(/;\s*$/, '')}; margin:0 0 1em 0`;
       return `<${tag}${a.replace(styleMatch[0], `style="${merged}"`)}>`;
     }
-    return `<${tag}${a} style="margin:0 0 1em 0">`;
+    return `<${tag}${a} style="${PARAGRAPH_BLOCK_STYLE}">`;
   });
 }
 

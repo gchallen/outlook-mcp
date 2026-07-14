@@ -82,10 +82,10 @@ describe('signature', () => {
       expect(html).toContain('line1<br>line2');
     });
 
-    it('adds paragraph spacing to raw HTML <p> blocks so they survive the margin reset', () => {
+    it('styles raw HTML <p> blocks so they survive the margin reset with even leading', () => {
       const html = buildReplyTopHtml('<p>One</p><p>Two</p>', { raw: true });
-      expect(html).toContain('<p style="margin:0 0 1em 0">One</p>');
-      expect(html).toContain('<p style="margin:0 0 1em 0">Two</p>');
+      expect(html).toContain('<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">One</p>');
+      expect(html).toContain('<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">Two</p>');
     });
 
     it('wraps the comment with max-width and opacity but no hardcoded text color', () => {
@@ -100,13 +100,15 @@ describe('signature', () => {
   });
 
   describe('ensureParagraphSpacing', () => {
-    it('gives a bare <p> a bottom margin', () => {
-      expect(ensureParagraphSpacing('<p>Hi</p>')).toBe('<p style="margin:0 0 1em 0">Hi</p>');
+    const BLOCK = 'margin:0 0 1em 0; font-size:11pt; line-height:1.4';
+
+    it('gives a bare <p> the block style (spacing + font-size + line-height)', () => {
+      expect(ensureParagraphSpacing('<p>Hi</p>')).toBe(`<p style="${BLOCK}">Hi</p>`);
     });
 
-    it('preserves other attributes while adding a margin', () => {
+    it('preserves other attributes while adding the block style', () => {
       expect(ensureParagraphSpacing('<p class="x">Hi</p>')).toBe(
-        '<p class="x" style="margin:0 0 1em 0">Hi</p>',
+        `<p class="x" style="${BLOCK}">Hi</p>`,
       );
     });
 
@@ -123,7 +125,7 @@ describe('signature', () => {
 
     it('is case-insensitive and handles multiple paragraphs', () => {
       expect(ensureParagraphSpacing('<P>a</P><p>b</p>')).toBe(
-        '<P style="margin:0 0 1em 0">a</P><p style="margin:0 0 1em 0">b</p>',
+        `<P style="${BLOCK}">a</P><p style="${BLOCK}">b</p>`,
       );
     });
 
