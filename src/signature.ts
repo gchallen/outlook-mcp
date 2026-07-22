@@ -114,9 +114,16 @@ export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): s
   // the signature must not get a second one appended beneath it.
   const signed = (comment ?? '').includes(SIGNATURE_MARKER);
 
-  const inner = opts?.raw
+  // A plain-text comment is rendered as <br>-joined lines, so its wrapper ends
+  // flush against the last line and the signature would butt directly onto it.
+  // Raw HTML comments don't need this: their trailing <p> already carries
+  // PARAGRAPH_BLOCK_STYLE's 1em bottom margin, and a <br> would double the gap.
+  const needsSpacer = !opts?.raw && !!comment && !signed;
+
+  const rendered = opts?.raw
     ? ensureParagraphSpacing(comment ?? '')
     : escapeHtml(comment ?? '').replace(/\n/g, '<br>');
+  const inner = needsSpacer ? `${rendered}<br>` : rendered;
 
   const commentHtml = comment ? `<div style="${BODY_STYLE}">${inner}</div>` : '';
   if (signed) return commentHtml;

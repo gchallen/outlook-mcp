@@ -82,6 +82,17 @@ describe('signature', () => {
       expect(html).toContain('line1<br>line2');
     });
 
+    it('separates a plain-text comment from the signature with a blank line', () => {
+      const html = buildReplyTopHtml('line1\nline2');
+      expect(html).toContain(`line1<br>line2<br></div>${SIGNATURE_HTML}`);
+    });
+
+    it('does not add a spacer after a raw HTML comment, whose <p> margin already spaces it', () => {
+      const html = buildReplyTopHtml('<p>One</p>', { raw: true });
+      expect(html).not.toContain(`</p><br></div>`);
+      expect(html).toContain(`</p></div>${SIGNATURE_HTML}`);
+    });
+
     it('does not append a second signature when the comment is already signed', () => {
       const html = buildReplyTopHtml(`Thanks!\n\n${SIGNATURE_TEXT}`);
       expect(html).not.toContain(SIGNATURE_HTML);
