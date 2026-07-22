@@ -110,10 +110,16 @@ export function ensureParagraphSpacing(html: string): string {
  * margin reset.
  */
 export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): string {
+  // Same double-signing guard as withSignature(): a comment that already carries
+  // the signature must not get a second one appended beneath it.
+  const signed = (comment ?? '').includes(SIGNATURE_MARKER);
+
   const inner = opts?.raw
     ? ensureParagraphSpacing(comment ?? '')
     : escapeHtml(comment ?? '').replace(/\n/g, '<br>');
+
   const commentHtml = comment ? `<div style="${BODY_STYLE}">${inner}</div>` : '';
+  if (signed) return commentHtml;
   return commentHtml + SIGNATURE_HTML;
 }
 
@@ -131,7 +137,12 @@ export function injectReplyTop(
   const contentType = (draftBody?.contentType ?? 'html').toLowerCase();
 
   if (contentType !== 'html') {
-    const top = comment ? `${comment}\n\n${SIGNATURE_TEXT}` : SIGNATURE_TEXT;
+    const top =
+      comment && comment.includes(SIGNATURE_MARKER)
+        ? comment
+        : comment
+          ? `${comment}\n\n${SIGNATURE_TEXT}`
+          : SIGNATURE_TEXT;
     return { contentType: draftBody?.contentType ?? 'text', content: `${top}\n\n${content}` };
   }
 

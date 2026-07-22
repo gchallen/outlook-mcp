@@ -82,6 +82,12 @@ describe('signature', () => {
       expect(html).toContain('line1<br>line2');
     });
 
+    it('does not append a second signature when the comment is already signed', () => {
+      const html = buildReplyTopHtml(`Thanks!\n\n${SIGNATURE_TEXT}`);
+      expect(html).not.toContain(SIGNATURE_HTML);
+      expect(html.match(/geoffreychallen\.com/g)).toHaveLength(1);
+    });
+
     it('styles raw HTML <p> blocks so they survive the margin reset with even leading', () => {
       const html = buildReplyTopHtml('<p>One</p><p>Two</p>', { raw: true });
       expect(html).toContain('<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">One</p>');
