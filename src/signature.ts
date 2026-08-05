@@ -13,13 +13,13 @@
 // bottom margin (PARAGRAPH_BLOCK_STYLE), so a <br> here would stack a second empty
 // line above the signature. The margin supplies the single gap on its own.
 // Single source of truth for the outgoing font, shared by the signature, the
-// comment wrapper, and each authored <p>. Georgia is a web-safe serif (present
-// on effectively every client, including Outlook desktop's Word engine, which
+// comment wrapper, and each authored <p>. Arial is web-safe (present on
+// effectively every client, including Outlook desktop's Word engine, which
 // ignores web fonts), so recipients see the intended face rather than a
 // fallback. Keep this in sync with the OWA "Compose and reply" default font so
 // editing a draft in the web UI doesn't visibly reflow it.
-const FONT_STACK = "Georgia, 'Times New Roman', Times, serif";
-const FONT_SIZE = '12pt';
+const FONT_STACK = 'Arial,Helvetica,sans-serif';
+const FONT_SIZE = '11pt';
 
 export const SIGNATURE_HTML =
   '<div id="Signature">' +

@@ -6,7 +6,7 @@ jest.mock('@microsoft/microsoft-graph-client');
 
 // Mirror of the font wrapper withSignature() applies to HTML bodies.
 const wrappedHtmlBody = (content: string): string =>
-  `<div style="font-family:Georgia, 'Times New Roman', Times, serif; font-size:12pt">${content}</div>`;
+  `<div style="font-family:Arial,Helvetica,sans-serif; font-size:11pt">${content}</div>`;
 
 describe('MessageTools', () => {
   let messageTools: MessageTools;
