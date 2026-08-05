@@ -262,6 +262,90 @@ describe('MessageTools', () => {
     });
   });
 
+  describe('moveFolderMessages', () => {
+    it('batch-moves a full page, then stops when the folder is drained', async () => {
+      mockRequest.get
+        .mockResolvedValueOnce({ value: [{ id: 'a' }, { id: 'b' }] })
+        .mockResolvedValueOnce({ value: [] });
+      mockRequest.post.mockResolvedValueOnce({
+        responses: [
+          { id: '0', status: 201 },
+          { id: '1', status: 201 },
+        ],
+      });
+
+      const result = await messageTools.moveFolderMessages('src', 'dest');
+
+      expect(result).toEqual({ moved: 2, failed: [], batches: 1 });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/src/messages');
+      expect(mockClient.api).toHaveBeenCalledWith('/$batch');
+      expect(mockRequest.post).toHaveBeenCalledWith({
+        requests: [
+          {
+            id: '0',
+            method: 'POST',
+            url: '/me/messages/a/move',
+            body: { destinationId: 'dest' },
+            headers: { 'Content-Type': 'application/json' },
+          },
+          {
+            id: '1',
+            method: 'POST',
+            url: '/me/messages/b/move',
+            body: { destinationId: 'dest' },
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ],
+      });
+    });
+
+    it('honors a limit and never lists more than the remaining budget', async () => {
+      mockRequest.get.mockResolvedValueOnce({ value: [{ id: 'a' }] });
+      mockRequest.post.mockResolvedValueOnce({ responses: [{ id: '0', status: 201 }] });
+
+      const result = await messageTools.moveFolderMessages('src', 'dest', { limit: 1 });
+
+      expect(result).toEqual({ moved: 1, failed: [], batches: 1 });
+      expect(mockRequest.top).toHaveBeenCalledWith(1); // budget, not the batch max
+      expect(mockRequest.get).toHaveBeenCalledTimes(1); // stopped once the limit was hit
+    });
+
+    it('leaves a failed message in the folder and moves it on the next round', async () => {
+      mockRequest.get
+        .mockResolvedValueOnce({ value: [{ id: 'a' }, { id: 'b' }] })
+        .mockResolvedValueOnce({ value: [{ id: 'b' }] })
+        .mockResolvedValueOnce({ value: [] });
+      mockRequest.post
+        .mockResolvedValueOnce({
+          responses: [
+            { id: '0', status: 201 },
+            { id: '1', status: 429 }, // b throttled
+          ],
+        })
+        .mockResolvedValueOnce({ responses: [{ id: '0', status: 201 }] }); // b retried
+
+      const result = await messageTools.moveFolderMessages('src', 'dest');
+
+      expect(result).toEqual({ moved: 2, failed: [], batches: 2 });
+    });
+
+    it('gives up after repeated zero-progress rounds and reports the failures', async () => {
+      jest.useFakeTimers();
+      try {
+        mockRequest.get.mockResolvedValue({ value: [{ id: 'a' }] });
+        mockRequest.post.mockResolvedValue({ responses: [{ id: '0', status: 403 }] });
+
+        const promise = messageTools.moveFolderMessages('src', 'dest');
+        await jest.runAllTimersAsync(); // flush the stall back-off sleeps
+        const result = await promise;
+
+        expect(result).toEqual({ moved: 0, failed: [{ id: 'a', status: 403 }], batches: 3 });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('permanentDeleteMessage', () => {
     it('permanently deletes a message', async () => {
       await messageTools.permanentDeleteMessage('1');

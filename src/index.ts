@@ -319,6 +319,30 @@ const tools: Tool[] = [
     },
   },
   {
+    name: 'move_folder_messages',
+    description:
+      "Bulk-move every message from a source folder into a destination folder using Graph's $batch endpoint (up to 20 moves per request). Built for retiring a folder of hundreds of messages that the web UI can't move in one action. Returns a summary { moved, failed, batches }; does not delete the emptied source folder.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceFolderId: { type: 'string', description: 'Folder to empty' },
+        destinationId: { type: 'string', description: 'Destination folder ID' },
+        limit: {
+          type: 'number',
+          description: 'Optional cap on how many messages to move (default: all)',
+          minimum: 1,
+        },
+        batchSize: {
+          type: 'number',
+          description: 'Moves per $batch request (default and max: 20)',
+          minimum: 1,
+          maximum: 20,
+        },
+      },
+      required: ['sourceFolderId', 'destinationId'],
+    },
+  },
+  {
     name: 'copy_message',
     description: 'Copy a message to another folder',
     inputSchema: {
@@ -948,6 +972,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 await messageTools.moveMessage(
                   args.messageId as string,
                   args.destinationId as string,
+                ),
+              ),
+            },
+          ],
+        };
+      case 'move_folder_messages':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.moveFolderMessages(
+                  args.sourceFolderId as string,
+                  args.destinationId as string,
+                  {
+                    limit: args.limit as number | undefined,
+                    batchSize: args.batchSize as number | undefined,
+                  },
                 ),
               ),
             },

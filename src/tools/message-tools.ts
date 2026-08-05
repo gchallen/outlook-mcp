@@ -27,6 +27,10 @@ function contentTypeForFile(filePath: string): string {
   return EXTENSION_MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Pagination limits to prevent excessive context generation
 const PAGINATION_LIMITS = {
   MESSAGES: { default: 25, max: 100 },
@@ -222,6 +226,93 @@ export class MessageTools {
     return await this.client.api(`/me/messages/${messageId}/move`).post({
       destinationId,
     });
+  }
+
+  /**
+   * Move every message out of `sourceFolderId` into `destinationId` in bulk,
+   * using Graph's `/$batch` endpoint (up to 20 moves per request) instead of one
+   * round-trip per message. Built for retiring a folder that holds hundreds of
+   * messages, which the web UI struggles to move in one action.
+   *
+   * Each round re-lists from the *top* of the source folder rather than paging
+   * with `$skip`: a successful move both removes the message from the folder and
+   * rotates its id, so any skip offset would be wrong on the next page. Messages
+   * that fail to move stay in the folder and are naturally retried on the next
+   * round; `stalls` guards against spinning forever when nothing can progress
+   * (e.g. a persistent error or sustained throttling), and `failedById` reports
+   * only the ids that were still failing when we stopped.
+   */
+  async moveFolderMessages(
+    sourceFolderId: string,
+    destinationId: string,
+    opts?: { limit?: number; batchSize?: number },
+  ): Promise<{ moved: number; failed: { id: string; status: number }[]; batches: number }> {
+    const BATCH_MAX = 20; // Graph $batch hard limit
+    const batchSize = Math.min(Math.max(opts?.batchSize ?? BATCH_MAX, 1), BATCH_MAX);
+    const limit = opts?.limit;
+    const MAX_STALLS = 3; // consecutive zero-progress rounds before giving up
+
+    const failedById = new Map<string, number>();
+    let moved = 0;
+    let batches = 0;
+    let stalls = 0;
+
+    for (;;) {
+      if (limit !== undefined && moved >= limit) break;
+
+      const budget = limit !== undefined ? limit - moved : batchSize;
+      const pageTop = Math.min(batchSize, budget);
+
+      const page: { value?: { id?: string }[] } = await this.client
+        .api(`/me/mailFolders/${sourceFolderId}/messages`)
+        .select('id')
+        .top(pageTop)
+        .get();
+
+      const ids = (page.value ?? [])
+        .map((m) => m.id)
+        .filter((id): id is string => typeof id === 'string');
+      if (ids.length === 0) break; // folder drained
+
+      const requests = ids.map((id, i) => ({
+        id: String(i),
+        method: 'POST',
+        url: `/me/messages/${id}/move`,
+        body: { destinationId },
+        headers: { 'Content-Type': 'application/json' },
+      }));
+
+      const res: { responses?: { id: string; status: number }[] } = await this.client
+        .api('/$batch')
+        .post({ requests });
+      batches++;
+
+      let succeeded = 0;
+      for (const r of res.responses ?? []) {
+        const id = ids[Number(r.id)];
+        if (id === undefined) continue;
+        if (r.status >= 200 && r.status < 300) {
+          moved++;
+          succeeded++;
+          failedById.delete(id); // cleared if a prior round had failed it
+        } else {
+          failedById.set(id, r.status);
+        }
+      }
+
+      if (succeeded === 0) {
+        if (++stalls >= MAX_STALLS) break;
+        await sleep(1000 * stalls); // back off before retrying a stalled round
+      } else {
+        stalls = 0;
+      }
+    }
+
+    return {
+      moved,
+      failed: [...failedById].map(([id, status]) => ({ id, status })),
+      batches,
+    };
   }
 
   async permanentDeleteMessage(messageId: string): Promise<void> {
