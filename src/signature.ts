@@ -12,9 +12,18 @@
 // No leading blank-line spacer: the body's last paragraph already carries a 1em
 // bottom margin (PARAGRAPH_BLOCK_STYLE), so a <br> here would stack a second empty
 // line above the signature. The margin supplies the single gap on its own.
+// Single source of truth for the outgoing font, shared by the signature, the
+// comment wrapper, and each authored <p>. Georgia is a web-safe serif (present
+// on effectively every client, including Outlook desktop's Word engine, which
+// ignores web fonts), so recipients see the intended face rather than a
+// fallback. Keep this in sync with the OWA "Compose and reply" default font so
+// editing a draft in the web UI doesn't visibly reflow it.
+const FONT_STACK = "Georgia, 'Times New Roman', Times, serif";
+const FONT_SIZE = '12pt';
+
 export const SIGNATURE_HTML =
   '<div id="Signature">' +
-  '<div style="font-family:Arial,Helvetica,sans-serif; font-size:11pt">' +
+  `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">` +
   '<span style="opacity:0.6">Geoffrey Challen&nbsp;// </span>' +
   '<a href="https://geoffreychallen.com" title="https://geoffreychallen.com" style="color:rgb(12,100,192)">https://geoffreychallen.com</a>' +
   '</div></div>';
@@ -31,16 +40,15 @@ export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
 // simply shows full-contrast default text, which is a safe degradation.
 // `max-width` caps the line length for readability on wide screens; clients that
 // don't honor it fall back to full width.
-const BODY_STYLE =
-  'font-family:Arial,Helvetica,sans-serif; font-size:11pt; max-width:40em; opacity:0.8';
+const BODY_STYLE = `font-family:${FONT_STACK}; font-size:${FONT_SIZE}; max-width:40em; opacity:0.8`;
 
 // Block-level style applied to each authored <p>. A paragraph's line-height is
 // resolved from the *block's* font-size, not an inner <span>'s — and when Outlook
 // reflows an edited draft it tends to move font-size onto inline spans, leaving the
-// <p> block to fall back to the reply's 12pt default and render taller, uneven
-// leading. Pinning font-size AND an explicit line-height on the block keeps the
-// leading deterministic and consistent across paragraphs regardless of that reflow.
-const PARAGRAPH_BLOCK_STYLE = 'margin:0 0 1em 0; font-size:11pt; line-height:1.4';
+// <p> block to fall back to the reply's default and render taller, uneven leading.
+// Pinning font-size AND an explicit line-height on the block keeps the leading
+// deterministic and consistent across paragraphs regardless of that reflow.
+const PARAGRAPH_BLOCK_STYLE = `margin:0 0 1em 0; font-size:${FONT_SIZE}; line-height:1.4`;
 
 // Marker used to detect an already-signed body and avoid double-signing.
 const SIGNATURE_MARKER = 'geoffreychallen.com';
@@ -58,6 +66,13 @@ function escapeHtml(text: string): string {
  * Return a copy of `body` with the signature appended. HTML bodies get the
  * styled HTML signature; text bodies get the plain-text version. A body that
  * already contains the signature is returned unchanged.
+ *
+ * HTML bodies are also wrapped in an explicit font (FONT_STACK/FONT_SIZE).
+ * Without it the authored markup carries no font-family and inherits OWA's base
+ * UI font (Segoe UI) when read or edited there — even though the user's compose
+ * default is something else, because that default only styles newly typed text,
+ * not stored HTML. Stamping the font here makes every outgoing body render in
+ * the intended face and keeps OWA from reflowing it on edit.
  */
 export function withSignature(body?: MessageBody): MessageBody | undefined {
   if (!body) return body;
@@ -70,7 +85,8 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
   }
 
   if (contentType === 'html') {
-    return { contentType: 'html', content: content + SIGNATURE_HTML };
+    const wrapped = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${content}</div>`;
+    return { contentType: 'html', content: wrapped + SIGNATURE_HTML };
   }
 
   return {
