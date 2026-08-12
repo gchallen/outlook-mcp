@@ -96,6 +96,47 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
 }
 
 /**
+ * Stamp the outgoing font onto an HTML body and normalize paragraph spacing,
+ * without touching the signature.
+ *
+ * `withSignature` does this on the create path, but a PATCH that replaces a
+ * draft's body used to go to Graph untouched — so a body authored as bare <p>
+ * tags inherited OWA's Segoe UI instead of Arial, and the paragraphs collapsed
+ * against the reply skeleton's margin reset. Replacing a body is the normal way
+ * to revise a draft, and it should not silently produce different typography
+ * from the message that draft started as.
+ *
+ * Idempotent in the ways that matter. A body that already declares a
+ * font-family is left to its author. A full <html>…<body> document gets the
+ * wrapper inside <body> rather than around the document, which would be
+ * malformed.
+ */
+export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
+  if (!body) return body;
+  if ((body.contentType ?? 'text').toLowerCase() !== 'html') return body;
+
+  const content = ensureParagraphSpacing(body.content ?? '');
+
+  // The author set their own font. Respect it.
+  if (/font-family/i.test(content)) return { contentType: 'html', content };
+
+  const open = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">`;
+
+  const bodyOpen = content.match(/<body[^>]*>/i);
+  if (bodyOpen && bodyOpen.index !== undefined) {
+    const start = bodyOpen.index + bodyOpen[0].length;
+    const closeAt = content.search(/<\/body>/i);
+    const end = closeAt > -1 ? closeAt : content.length;
+    return {
+      contentType: 'html',
+      content: content.slice(0, start) + open + content.slice(start, end) + '</div>' + content.slice(end),
+    };
+  }
+
+  return { contentType: 'html', content: open + content + '</div>' };
+}
+
+/**
  * Graph's reply/forward skeleton carries `<style>p{margin-top:0;margin-bottom:0}</style>`
  * in its <head>, which collapses the vertical spacing between <p> paragraphs in an
  * injected HTML comment so they render as one run-on block. Inline styles win over that

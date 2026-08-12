@@ -1,6 +1,6 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Message, Attachment } from '@microsoft/microsoft-graph-types';
-import { withSignature, injectReplyTop } from '../signature.js';
+import { withSignature, withOutgoingFont, injectReplyTop } from '../signature.js';
 import { readFile } from 'fs/promises';
 import { basename, extname } from 'path';
 
@@ -97,8 +97,18 @@ export class MessageTools {
     });
   }
 
+  /**
+   * PATCH a message. An HTML body gets the outgoing font and paragraph spacing
+   * stamped on it, the same as the create path, so revising a draft does not
+   * quietly change its typography. The signature is still the caller's to
+   * include: a PATCH usually replaces the whole body, and re-appending one
+   * would fight with a body that already carries it.
+   */
   async updateMessage(messageId: string, updates: Partial<Message>): Promise<Message> {
-    return await this.client.api(`/me/messages/${messageId}`).patch(updates);
+    const patch = updates.body
+      ? { ...updates, body: withOutgoingFont(updates.body as never) as never }
+      : updates;
+    return await this.client.api(`/me/messages/${messageId}`).patch(patch);
   }
 
   async deleteMessage(messageId: string): Promise<void> {

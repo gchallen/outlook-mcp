@@ -153,7 +153,7 @@ const tools: Tool[] = [
   {
     name: 'update_message',
     description:
-      'Update message properties (PATCH, written verbatim). Unlike create_message/send_mail, the body is NOT run through the signature helper — when replacing a body, include the full HTML and the signature yourself, and use contentType "html" with <ul>/<li> for lists. Note: editing a draft can rotate its message ID, so re-fetch the draft (list/get) before a follow-up update.',
+      'Update message properties (PATCH). An HTML body is stamped with the outgoing font and paragraph spacing automatically, so authored <p>/<ul>/<li> markup needs no inline font styling; a body that already declares its own font-family is left alone. The signature is NOT added — a PATCH usually replaces the whole body, so include the signature yourself. Use contentType "html" with <ul>/<li> for lists. Note: editing a draft can rotate its message ID, so re-fetch the draft (list/get) before a follow-up update.',
     inputSchema: {
       type: 'object',
       properties: {

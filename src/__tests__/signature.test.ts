@@ -1,11 +1,4 @@
-import {
-  SIGNATURE_HTML,
-  SIGNATURE_TEXT,
-  withSignature,
-  buildReplyTopHtml,
-  injectReplyTop,
-  ensureParagraphSpacing,
-} from '../signature';
+import { SIGNATURE_HTML, SIGNATURE_TEXT, withSignature, buildReplyTopHtml, injectReplyTop, ensureParagraphSpacing, withOutgoingFont } from '../signature.js';
 
 describe('signature', () => {
   describe('withSignature', () => {
@@ -202,5 +195,37 @@ describe('signature', () => {
       expect(result.contentType).toBe('html');
       expect(result.content).toContain('geoffreychallen.com');
     });
+  });
+});
+
+describe('withOutgoingFont', () => {
+  it('wraps a bare HTML body in the outgoing font', () => {
+    const out = withOutgoingFont({ contentType: 'html', content: '<p>Hi</p>' });
+    expect(out?.content).toContain('font-family:Arial,Helvetica,sans-serif');
+    expect(out?.content).toContain('font-size:11pt');
+  });
+
+  it('gives bare paragraphs their block spacing', () => {
+    const out = withOutgoingFont({ contentType: 'html', content: '<p>One</p><p>Two</p>' });
+    expect(out?.content).toContain('margin:0 0 1em 0');
+  });
+
+  it('leaves an author-styled body alone', () => {
+    const content = '<p style="font-family:Georgia">Hi</p>';
+    const out = withOutgoingFont({ contentType: 'html', content });
+    expect(out?.content).toContain('Georgia');
+    expect(out?.content).not.toContain('Arial,Helvetica');
+  });
+
+  it('wraps inside <body> for a full document rather than around it', () => {
+    const content = '<html><head></head><body dir="ltr"><p>Hi</p></body></html>';
+    const out = withOutgoingFont({ contentType: 'html', content });
+    expect(out?.content).toMatch(/<body dir="ltr"><div style="font-family:Arial/);
+    expect(out?.content).toMatch(/<\/div><\/body>/);
+  });
+
+  it('passes plain text through untouched', () => {
+    const body = { contentType: 'text', content: 'Hi' };
+    expect(withOutgoingFont(body)).toEqual(body);
   });
 });
