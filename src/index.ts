@@ -326,12 +326,17 @@ const tools: Tool[] = [
   {
     name: 'move_folder_messages',
     description:
-      "Bulk-move every message from a source folder into a destination folder using Graph's $batch endpoint (up to 20 moves per request). Built for retiring a folder of hundreds of messages that the web UI can't move in one action. Returns a summary { moved, failed, batches }; does not delete the emptied source folder.",
+      'Bulk-move messages from a source folder into a destination folder using Graph\'s $batch endpoint (up to 20 moves per request). Built for retiring a folder of hundreds of messages, or archiving a dated subset, that the web UI can\'t move in one action. Pass an optional OData `filter` to move only the matching subset — e.g. filter "receivedDateTime lt 2025-08-20T00:00:00Z" with sourceFolderId inbox and destinationId the Archive folder to archive everything older than that date; omit it to move the whole folder. Do NOT add an $orderby — Graph rejects filter+orderby on this collection. Returns a summary { moved, failed, batches }; does not delete the emptied source folder.',
     inputSchema: {
       type: 'object',
       properties: {
-        sourceFolderId: { type: 'string', description: 'Folder to empty' },
+        sourceFolderId: { type: 'string', description: 'Folder to move messages out of' },
         destinationId: { type: 'string', description: 'Destination folder ID' },
+        filter: {
+          type: 'string',
+          description:
+            'Optional OData $filter to move only matching messages (e.g. "receivedDateTime lt 2025-08-20T00:00:00Z"). Omit to move the entire folder.',
+        },
         limit: {
           type: 'number',
           description: 'Optional cap on how many messages to move (default: all)',
@@ -1004,6 +1009,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   {
                     limit: args.limit as number | undefined,
                     batchSize: args.batchSize as number | undefined,
+                    filter: args.filter as string | undefined,
                   },
                 ),
               ),

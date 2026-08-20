@@ -270,11 +270,20 @@ export class MessageTools {
    * round; `stalls` guards against spinning forever when nothing can progress
    * (e.g. a persistent error or sustained throttling), and `failedById` reports
    * only the ids that were still failing when we stopped.
+   *
+   * An optional OData `filter` narrows the move to the matching subset (e.g.
+   * `receivedDateTime lt 2025-08-20T00:00:00Z` to archive everything older than a
+   * year). Because a moved message leaves the folder, it also leaves the filtered
+   * set, so re-listing the top with the same filter drains the matches the same
+   * way an unfiltered run drains the whole folder — no `$orderby` needed (Graph
+   * rejects `$filter` combined with `$orderby` on this collection as "too
+   * complex"). A matched message that fails to move keeps matching and is retried
+   * until it succeeds or the stall guard trips.
    */
   async moveFolderMessages(
     sourceFolderId: string,
     destinationId: string,
-    opts?: { limit?: number; batchSize?: number },
+    opts?: { limit?: number; batchSize?: number; filter?: string },
   ): Promise<{ moved: number; failed: { id: string; status: number }[]; batches: number }> {
     const BATCH_MAX = 20; // Graph $batch hard limit
     const batchSize = Math.min(Math.max(opts?.batchSize ?? BATCH_MAX, 1), BATCH_MAX);
@@ -292,11 +301,12 @@ export class MessageTools {
       const budget = limit !== undefined ? limit - moved : batchSize;
       const pageTop = Math.min(batchSize, budget);
 
-      const page: { value?: { id?: string }[] } = await this.client
+      const request = this.client
         .api(`/me/mailFolders/${sourceFolderId}/messages`)
         .select('id')
-        .top(pageTop)
-        .get();
+        .top(pageTop);
+      if (opts?.filter) request.filter(opts.filter);
+      const page: { value?: { id?: string }[] } = await request.get();
 
       const ids = (page.value ?? [])
         .map((m) => m.id)

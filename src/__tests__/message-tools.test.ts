@@ -305,6 +305,27 @@ describe('MessageTools', () => {
       });
     });
 
+    it('applies an OData filter to each round so only the matching subset moves', async () => {
+      mockRequest.get
+        .mockResolvedValueOnce({ value: [{ id: 'a' }, { id: 'b' }] })
+        .mockResolvedValueOnce({ value: [] });
+      mockRequest.post.mockResolvedValueOnce({
+        responses: [
+          { id: '0', status: 201 },
+          { id: '1', status: 201 },
+        ],
+      });
+
+      const result = await messageTools.moveFolderMessages('inbox', 'archive', {
+        filter: 'receivedDateTime lt 2025-08-20T00:00:00Z',
+      });
+
+      expect(result).toEqual({ moved: 2, failed: [], batches: 1 });
+      // The filter is re-applied on every list round, not just the first.
+      expect(mockRequest.filter).toHaveBeenCalledWith('receivedDateTime lt 2025-08-20T00:00:00Z');
+      expect(mockRequest.filter).toHaveBeenCalledTimes(2);
+    });
+
     it('honors a limit and never lists more than the remaining budget', async () => {
       mockRequest.get.mockResolvedValueOnce({ value: [{ id: 'a' }] });
       mockRequest.post.mockResolvedValueOnce({ responses: [{ id: '0', status: 201 }] });
