@@ -357,14 +357,14 @@ const tools: Tool[] = [
   {
     name: 'search_messages',
     description:
-      'Full-text search across mail using Microsoft Graph $search (KQL). Prefer property-scoped queries over bare keywords for much better precision. Supported properties (combine with implicit AND, or explicit AND/OR/NOT): from:"alice@x.com", to:, cc:, subject:"invoice", body:, participants: (any of from/to/cc), hasAttachment:true, attachment:"report.pdf", received>=2024-01-01, received:2024-01-01..2024-01-31, sent>=, importance:high, isRead:false. Quote multi-word values ("quarterly report") to match the phrase. Examples: from:"dean@illinois.edu" subject:budget received>=2024-09-01 — hasAttachment:true attachment:"syllabus.pdf". Note: $search results are relevance-ranked and CANNOT be date-sorted or combined with an OData $filter (that is a Graph limitation, not a tool one); when you need strict newest-first ordering or a hard field filter, use list_messages with filter/orderBy instead. Scope to one folder with folderId (get IDs from list_mail_folders / get_well_known_folder).',
+      'Full-text search across mail using Microsoft Graph $search (KQL). Prefer property-scoped queries over bare keywords for much better precision. Supported properties (combine space-separated for implicit AND, or with explicit AND/OR/NOT): from:alice@x.com, to:, cc:, subject:budget, body:, participants: (any of from/to/cc), hasAttachment:true, attachment:report.pdf, received>=2024-01-01, received:2024-01-01..2024-01-31, sent>=, importance:high, isRead:false. Do NOT quote simple single-token values like an email address (from:alice@x.com, not from:"alice@x.com"). Only put double quotes around multi-word phrase values: subject:"quarterly report". Do NOT wrap the whole query in outer quotes — the tool adds the outer quoting Graph requires. Examples: from:dean@illinois.edu subject:budget received>=2024-09-01 / hasAttachment:true subject:"final grades". Note: $search results are relevance-ranked and CANNOT be date-sorted or combined with an OData $filter (a Graph limitation, not a tool one); when you need strict newest-first ordering or a hard field filter, use list_messages with filter/orderBy instead. Scope to one folder with folderId (get IDs from list_mail_folders / get_well_known_folder).',
     inputSchema: {
       type: 'object',
       properties: {
         searchTerm: {
           type: 'string',
           description:
-            'KQL query. Use property restrictions (from:, subject:, body:, received>=, hasAttachment:true, etc.) rather than bare keywords when possible; quote phrases.',
+            'KQL query. Use property restrictions (from:, subject:, body:, received>=, hasAttachment:true, etc.) rather than bare keywords when possible. Leave simple values unquoted; quote only multi-word phrases (subject:"quarterly report"). Do not add outer quotes around the whole query — the tool wraps it.',
         },
         folderId: {
           type: 'string',

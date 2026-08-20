@@ -359,20 +359,38 @@ describe('MessageTools', () => {
   });
 
   describe('searchMessages', () => {
-    it('searches messages and clamps to the search max of 50', async () => {
+    it('wraps a bare term in the outer quotes Graph requires and clamps to the search max of 50', async () => {
       mockRequest.get.mockResolvedValue({ value: [{ id: '1' }] });
       const result = await messageTools.searchMessages('hello', { top: 999 });
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
-      expect(mockRequest.search).toHaveBeenCalledWith('hello');
+      expect(mockRequest.search).toHaveBeenCalledWith('"hello"');
       expect(mockRequest.top).toHaveBeenCalledWith(50);
       expect(result.value).toEqual([{ id: '1' }]);
     });
 
+    it('wraps a property-scoped query without inner-quoting a simple value', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.searchMessages('from:a@x.com received>=2024-01-01');
+      expect(mockRequest.search).toHaveBeenCalledWith('"from:a@x.com received>=2024-01-01"');
+    });
+
+    it('escapes inner quotes on phrase values when wrapping', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.searchMessages('subject:"weekly digest"');
+      expect(mockRequest.search).toHaveBeenCalledWith('"subject:\\"weekly digest\\""');
+    });
+
+    it('passes through a query already wrapped in outer quotes', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.searchMessages('"subject:\\"weekly digest\\""');
+      expect(mockRequest.search).toHaveBeenCalledWith('"subject:\\"weekly digest\\""');
+    });
+
     it('scopes the search to a folder when folderId is given', async () => {
       mockRequest.get.mockResolvedValue({ value: [] });
-      await messageTools.searchMessages('from:"a@x.com"', { folderId: 'inbox' });
+      await messageTools.searchMessages('from:a@x.com', { folderId: 'inbox' });
       expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/inbox/messages');
-      expect(mockRequest.search).toHaveBeenCalledWith('from:"a@x.com"');
+      expect(mockRequest.search).toHaveBeenCalledWith('"from:a@x.com"');
     });
   });
 

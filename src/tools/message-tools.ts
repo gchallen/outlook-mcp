@@ -31,6 +31,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Graph mail `$search` (KQL) requires the ENTIRE expression to be wrapped in
+ * outer double quotes, e.g. `$search="from:a@x.com received>=2024-01-01"`.
+ * Simple values take no inner quotes; multi-word phrase values take escaped
+ * inner quotes (`subject:\"weekly digest\"`). Callers pass natural KQL —
+ * `from:a@x.com subject:"weekly digest"` — and this wraps + escapes it into
+ * the form Graph accepts. A term the caller already wrapped in outer quotes is
+ * passed through untouched (assumed pre-formatted).
+ */
+function toKqlSearch(term: string): string {
+  const trimmed = term.trim();
+  if (trimmed.length > 1 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed;
+  }
+  return `"${trimmed.replace(/"/g, '\\"')}"`;
+}
+
 // Pagination limits to prevent excessive context generation
 const PAGINATION_LIMITS = {
   MESSAGES: { default: 25, max: 100 },
@@ -347,7 +364,7 @@ export class MessageTools {
     const endpoint = params?.folderId
       ? `/me/mailFolders/${params.folderId}/messages`
       : '/me/messages';
-    const request = this.client.api(endpoint).search(searchTerm);
+    const request = this.client.api(endpoint).search(toKqlSearch(searchTerm));
 
     if (params?.select) request.select(params.select);
     // Apply default pagination limit to prevent excessive context generation
