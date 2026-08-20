@@ -356,11 +356,21 @@ const tools: Tool[] = [
   },
   {
     name: 'search_messages',
-    description: 'Search for messages with pagination',
+    description:
+      'Full-text search across mail using Microsoft Graph $search (KQL). Prefer property-scoped queries over bare keywords for much better precision. Supported properties (combine with implicit AND, or explicit AND/OR/NOT): from:"alice@x.com", to:, cc:, subject:"invoice", body:, participants: (any of from/to/cc), hasAttachment:true, attachment:"report.pdf", received>=2024-01-01, received:2024-01-01..2024-01-31, sent>=, importance:high, isRead:false. Quote multi-word values ("quarterly report") to match the phrase. Examples: from:"dean@illinois.edu" subject:budget received>=2024-09-01 — hasAttachment:true attachment:"syllabus.pdf". Note: $search results are relevance-ranked and CANNOT be date-sorted or combined with an OData $filter (that is a Graph limitation, not a tool one); when you need strict newest-first ordering or a hard field filter, use list_messages with filter/orderBy instead. Scope to one folder with folderId (get IDs from list_mail_folders / get_well_known_folder).',
     inputSchema: {
       type: 'object',
       properties: {
-        searchTerm: { type: 'string', description: 'Search term' },
+        searchTerm: {
+          type: 'string',
+          description:
+            'KQL query. Use property restrictions (from:, subject:, body:, received>=, hasAttachment:true, etc.) rather than bare keywords when possible; quote phrases.',
+        },
+        folderId: {
+          type: 'string',
+          description:
+            'Optional mail folder ID to scope the search to a single folder (e.g. inbox, or a well-known folder ID). Omit to search all folders.',
+        },
         select: { type: 'string', description: 'Fields to return' },
         top: {
           type: 'number',

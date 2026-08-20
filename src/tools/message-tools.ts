@@ -211,7 +211,9 @@ export class MessageTools {
     html?: boolean,
     message?: Partial<Message>,
   ): Promise<Message> {
-    return await this.createReplyDraft(messageId, 'createReplyAll', comment, message, { raw: html });
+    return await this.createReplyDraft(messageId, 'createReplyAll', comment, message, {
+      raw: html,
+    });
   }
 
   async forwardMessage(
@@ -335,13 +337,17 @@ export class MessageTools {
       select?: string;
       top?: number;
       skip?: number;
+      folderId?: string;
     },
   ): Promise<{
     value: Message[];
     '@odata.nextLink'?: string;
     '@odata.count'?: number;
   }> {
-    const request = this.client.api('/me/messages').search(searchTerm);
+    const endpoint = params?.folderId
+      ? `/me/mailFolders/${params.folderId}/messages`
+      : '/me/messages';
+    const request = this.client.api(endpoint).search(searchTerm);
 
     if (params?.select) request.select(params.select);
     // Apply default pagination limit to prevent excessive context generation

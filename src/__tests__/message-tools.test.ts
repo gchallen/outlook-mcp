@@ -367,6 +367,13 @@ describe('MessageTools', () => {
       expect(mockRequest.top).toHaveBeenCalledWith(50);
       expect(result.value).toEqual([{ id: '1' }]);
     });
+
+    it('scopes the search to a folder when folderId is given', async () => {
+      mockRequest.get.mockResolvedValue({ value: [] });
+      await messageTools.searchMessages('from:"a@x.com"', { folderId: 'inbox' });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/mailFolders/inbox/messages');
+      expect(mockRequest.search).toHaveBeenCalledWith('from:"a@x.com"');
+    });
   });
 
   describe('getMessageDelta', () => {
