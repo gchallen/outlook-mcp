@@ -1,5 +1,5 @@
 import { MessageTools } from '../tools/message-tools';
-import { SIGNATURE_HTML, SIGNATURE_TEXT } from '../signature';
+import { SIGNATURE_HTML } from '../signature';
 import { Client } from '@microsoft/microsoft-graph-client';
 
 jest.mock('@microsoft/microsoft-graph-client');
@@ -159,12 +159,14 @@ describe('MessageTools', () => {
       expect(posted.message.subject).toBe('Test');
     });
 
-    it('appends the text signature to a plain-text body', async () => {
+    it('converts a plain-text body to HTML with the styled signature', async () => {
       await messageTools.sendMail({
         message: { subject: 'Test', body: { contentType: 'text', content: 'Hello' } },
       });
       const posted = mockRequest.post.mock.calls[0][0];
-      expect(posted.message.body.content).toBe(`Hello\n\n${SIGNATURE_TEXT}`);
+      expect(posted.message.body.contentType).toBe('html');
+      expect(posted.message.body.content).toContain('Hello<br>');
+      expect(posted.message.body.content).toContain(SIGNATURE_HTML);
     });
   });
 

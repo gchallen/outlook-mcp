@@ -1,4 +1,15 @@
-import { SIGNATURE_HTML, SIGNATURE_TEXT, withSignature, buildReplyTopHtml, injectReplyTop, ensureParagraphSpacing, withOutgoingFont } from '../signature.js';
+import {
+  SIGNATURE_HTML,
+  SIGNATURE_TEXT,
+  withSignature,
+  buildReplyTopHtml,
+  injectReplyTop,
+  ensureParagraphSpacing,
+  withOutgoingFont,
+  linkifyEscapedText,
+  linkifyHtml,
+  textToHtml,
+} from '../signature.js';
 
 describe('signature', () => {
   describe('withSignature', () => {
@@ -16,19 +27,46 @@ describe('signature', () => {
       });
     });
 
-    it('appends the text signature to a text body', () => {
+    it('converts a text body to HTML with the styled signature', () => {
       const result = withSignature({ contentType: 'text', content: 'Hello' });
-      expect(result).toEqual({ contentType: 'text', content: `Hello\n\n${SIGNATURE_TEXT}` });
+      expect(result?.contentType).toBe('html');
+      expect(result?.content).toContain('Hello<br>');
+      expect(result?.content).toContain(SIGNATURE_HTML);
     });
 
-    it('treats a missing contentType as text', () => {
+    it('escapes markup and hyperlinks bare URLs in a text body', () => {
+      const result = withSignature({
+        contentType: 'text',
+        content: 'See <this>: https://example.com/page',
+      });
+      expect(result?.content).toContain('See &lt;this&gt;:');
+      expect(result?.content).toContain(
+        '<a href="https://example.com/page" style="color:rgb(12,100,192)">https://example.com/page</a>',
+      );
+    });
+
+    it('replaces a spelled-out plain signature with the styled one', () => {
+      const result = withSignature({
+        contentType: 'text',
+        content: `Thanks!\n\n${SIGNATURE_TEXT}`,
+      });
+      expect(result?.content).toContain('Thanks!');
+      expect(result?.content).toContain(SIGNATURE_HTML);
+      // The plain copy is gone: the only geoffreychallen.com mentions are the
+      // signature's own href/title/label.
+      expect(result?.content!.match(/geoffreychallen\.com/g)).toHaveLength(3);
+    });
+
+    it('treats a missing contentType as text and still emits HTML', () => {
       const result = withSignature({ content: 'Hi' });
-      expect(result).toEqual({ contentType: 'text', content: `Hi\n\n${SIGNATURE_TEXT}` });
+      expect(result?.contentType).toBe('html');
+      expect(result?.content).toContain('Hi<br>');
+      expect(result?.content).toContain(SIGNATURE_HTML);
     });
 
     it('uses just the signature when text content is empty', () => {
       const result = withSignature({ contentType: 'text', content: '' });
-      expect(result).toEqual({ contentType: 'text', content: SIGNATURE_TEXT });
+      expect(result).toEqual({ contentType: 'html', content: SIGNATURE_HTML });
     });
 
     it('is case-insensitive about the HTML content type', () => {
@@ -37,14 +75,27 @@ describe('signature', () => {
       expect(result?.content).toContain(SIGNATURE_HTML);
     });
 
+    it('hyperlinks bare URLs in an HTML body without touching existing links', () => {
+      const result = withSignature({
+        contentType: 'html',
+        content: '<p>See https://example.com and <a href="https://x.com">x</a></p>',
+      });
+      expect(result?.content).toContain(
+        '<a href="https://example.com" style="color:rgb(12,100,192)">https://example.com</a>',
+      );
+      expect(result?.content).toContain('<a href="https://x.com">x</a>');
+    });
+
     it('does not double-sign a body that already contains the signature', () => {
       const signed = { contentType: 'html', content: '<div>Hi</div>' + SIGNATURE_HTML };
       expect(withSignature(signed)).toBe(signed);
     });
 
-    it('does not double-sign a text body that mentions the signature url', () => {
-      const body = { contentType: 'text', content: 'see geoffreychallen.com' };
-      expect(withSignature(body)).toBe(body);
+    it('still signs a text body that merely mentions the signature url', () => {
+      const result = withSignature({ contentType: 'text', content: 'see geoffreychallen.com' });
+      expect(result?.contentType).toBe('html');
+      expect(result?.content).toContain('see geoffreychallen.com');
+      expect(result?.content).toContain(SIGNATURE_HTML);
     });
   });
 
@@ -88,10 +139,44 @@ describe('signature', () => {
       expect(html).toContain(`</p></div>${SIGNATURE_HTML}`);
     });
 
-    it('does not append a second signature when the comment is already signed', () => {
+    it('replaces a spelled-out plain signature with the styled one', () => {
       const html = buildReplyTopHtml(`Thanks!\n\n${SIGNATURE_TEXT}`);
-      expect(html).not.toContain(SIGNATURE_HTML);
-      expect(html.match(/geoffreychallen\.com/g)).toHaveLength(1);
+      expect(html).toContain('Thanks!');
+      expect(html.endsWith(SIGNATURE_HTML)).toBe(true);
+      // Only the styled signature mentions the domain (href/title/label).
+      expect(html.match(/geoffreychallen\.com/g)).toHaveLength(3);
+    });
+
+    it('hyperlinks bare URLs in a plain-text comment', () => {
+      const html = buildReplyTopHtml(
+        'Try https://www.usingandunderstanding.ai/educators#conversational-assessment today',
+      );
+      expect(html).toContain(
+        '<a href="https://www.usingandunderstanding.ai/educators#conversational-assessment" style="color:rgb(12,100,192)">',
+      );
+    });
+
+    it('leaves trailing punctuation outside a hyperlinked URL', () => {
+      const html = buildReplyTopHtml('See https://example.com/a.');
+      expect(html).toContain(
+        '<a href="https://example.com/a" style="color:rgb(12,100,192)">https://example.com/a</a>.',
+      );
+    });
+
+    it('hyperlinks bare URLs in a raw HTML comment without double-linking', () => {
+      const html = buildReplyTopHtml(
+        '<p>Bare https://example.com and linked <a href="https://x.com">https://x.com</a></p>',
+        { raw: true },
+      );
+      expect(html).toContain(
+        '<a href="https://example.com" style="color:rgb(12,100,192)">https://example.com</a>',
+      );
+      expect(html).toContain('<a href="https://x.com">https://x.com</a>');
+    });
+
+    it('does not append a second signature when a raw comment already carries the styled one', () => {
+      const html = buildReplyTopHtml(`<p>Thanks!</p>${SIGNATURE_HTML}`, { raw: true });
+      expect(html.match(/id="Signature"/g)).toHaveLength(1);
     });
 
     it('styles raw HTML <p> blocks so they survive the margin reset with even leading', () => {
@@ -179,13 +264,17 @@ describe('signature', () => {
       );
     });
 
-    it('handles a text draft body', () => {
+    it('converts a text draft skeleton to signed HTML', () => {
       const draft = { contentType: 'text', content: '> quoted line' };
       const result = injectReplyTop(draft, 'My reply');
-      expect(result).toEqual({
-        contentType: 'text',
-        content: `My reply\n\n${SIGNATURE_TEXT}\n\n> quoted line`,
-      });
+      expect(result.contentType).toBe('html');
+      expect(result.content).toContain('My reply');
+      expect(result.content).toContain(SIGNATURE_HTML);
+      expect(result.content).toContain('&gt; quoted line');
+      // New content sits above the quoted history.
+      expect(result.content!.indexOf('My reply')).toBeLessThan(
+        result.content!.indexOf('&gt; quoted line'),
+      );
     });
 
     it('signs even without a comment', () => {
@@ -228,8 +317,58 @@ describe('withOutgoingFont', () => {
     expect(out?.content).toMatch(/<\/div><\/body>/);
   });
 
-  it('passes plain text through untouched', () => {
-    const body = { contentType: 'text', content: 'Hi' };
-    expect(withOutgoingFont(body)).toEqual(body);
+  it('converts a plain-text replacement body to HTML with links', () => {
+    const out = withOutgoingFont({ contentType: 'text', content: 'Hi https://example.com' });
+    expect(out?.contentType).toBe('html');
+    expect(out?.content).toContain('font-family:Arial,Helvetica,sans-serif');
+    expect(out?.content).toContain(
+      '<a href="https://example.com" style="color:rgb(12,100,192)">https://example.com</a>',
+    );
+    // No signature added: on the update path it is the caller's to include.
+    expect(out?.content).not.toContain('id="Signature"');
+  });
+
+  it('upgrades a plain-text signature in a replacement body to the styled one', () => {
+    const out = withOutgoingFont({ contentType: 'text', content: `Hi\n\n${SIGNATURE_TEXT}` });
+    expect(out?.content).toContain(SIGNATURE_HTML);
+    expect(out?.content!.match(/geoffreychallen\.com/g)).toHaveLength(3);
+  });
+
+  it('hyperlinks bare URLs in an HTML replacement body', () => {
+    const out = withOutgoingFont({
+      contentType: 'html',
+      content: '<p>See https://example.com</p>',
+    });
+    expect(out?.content).toContain(
+      '<a href="https://example.com" style="color:rgb(12,100,192)">https://example.com</a>',
+    );
+  });
+});
+
+describe('linkify', () => {
+  it('hyperlinks a URL in escaped text and keeps entity escapes intact', () => {
+    expect(linkifyEscapedText('go to https://example.com/a?b=1&amp;c=2 now')).toBe(
+      'go to <a href="https://example.com/a?b=1&amp;c=2" style="color:rgb(12,100,192)">https://example.com/a?b=1&amp;c=2</a> now',
+    );
+  });
+
+  it('leaves text without URLs unchanged', () => {
+    expect(linkifyEscapedText('no links here')).toBe('no links here');
+  });
+
+  it('does not linkify inside href attributes or existing anchors', () => {
+    const html = '<a href="https://x.com" title="https://x.com">click https://x.com</a>';
+    expect(linkifyHtml(html)).toBe(html);
+  });
+
+  it('does not linkify inside <style> blocks', () => {
+    const html = '<style>p { background:url(https://x.com/i.png) }</style>';
+    expect(linkifyHtml(html)).toBe(html);
+  });
+
+  it('textToHtml escapes, links, and converts newlines', () => {
+    expect(textToHtml('a & b\nhttps://x.com')).toBe(
+      'a &amp; b<br><a href="https://x.com" style="color:rgb(12,100,192)">https://x.com</a>',
+    );
   });
 });

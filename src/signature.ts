@@ -50,8 +50,12 @@ const BODY_STYLE = `font-family:${FONT_STACK}; font-size:${FONT_SIZE}; max-width
 // deterministic and consistent across paragraphs regardless of that reflow.
 const PARAGRAPH_BLOCK_STYLE = `margin:0 0 1em 0; font-size:${FONT_SIZE}; line-height:1.4`;
 
-// Marker used to detect an already-signed body and avoid double-signing.
-const SIGNATURE_MARKER = 'geoffreychallen.com';
+// Marker used to detect an already-signed HTML body and avoid double-signing.
+// Matches the id on SIGNATURE_HTML's wrapper — NOT the bare domain, which also
+// appears when the URL is merely mentioned in prose. (An earlier version keyed
+// on 'geoffreychallen.com', which meant a comment that spelled out the plain
+// signature suppressed the styled one and shipped as unlinked text.)
+const SIGNED_MARKER = 'id="Signature"';
 
 interface MessageBody {
   contentType?: string;
@@ -62,10 +66,75 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Matches a bare URL in (possibly entity-escaped) text. Quotes and angle
+// brackets terminate the match so hrefs and tags never bleed in.
+const URL_PATTERN = /\bhttps?:\/\/[^\s<>"']+/gi;
+
+// Link style shared with SIGNATURE_HTML: an explicit blue affordance that
+// clients recognize and adjust for dark mode.
+const LINK_STYLE = 'color:rgb(12,100,192)';
+
 /**
- * Return a copy of `body` with the signature appended. HTML bodies get the
- * styled HTML signature; text bodies get the plain-text version. A body that
- * already contains the signature is returned unchanged.
+ * Wrap bare URLs in styled <a> tags. Input is text that is already
+ * HTML-escaped (or a text node lifted out of HTML), so the match can be used
+ * directly as both href and label — an escaped `&amp;` is the correct encoding
+ * in either position. Trailing punctuation reads as prose, not URL, and is left
+ * outside the link.
+ */
+export function linkifyEscapedText(escaped: string): string {
+  return escaped.replace(URL_PATTERN, (url) => {
+    const trail = url.match(/[.,;:!?)\]]+$/)?.[0] ?? '';
+    const href = trail ? url.slice(0, -trail.length) : url;
+    return `<a href="${href}" style="${LINK_STYLE}">${href}</a>${trail}`;
+  });
+}
+
+/**
+ * Auto-link bare URLs in an HTML fragment without touching URLs that are
+ * already inside <a> elements, tag attributes, or <style>/<script> content.
+ */
+export function linkifyHtml(html: string): string {
+  let inAnchor = 0;
+  let inSkip = 0;
+  return html.replace(/<[^>]*>|[^<]+/g, (chunk) => {
+    if (chunk.startsWith('<')) {
+      const t = chunk.toLowerCase();
+      if (/^<a[\s>]/.test(t)) inAnchor++;
+      else if (t.startsWith('</a')) inAnchor = Math.max(0, inAnchor - 1);
+      else if (/^<(style|script)[\s>]/.test(t)) inSkip++;
+      else if (/^<\/(style|script)/.test(t)) inSkip = Math.max(0, inSkip - 1);
+      return chunk;
+    }
+    return inAnchor || inSkip ? chunk : linkifyEscapedText(chunk);
+  });
+}
+
+/** Render plain text as HTML: escape, hyperlink bare URLs, keep line breaks. */
+export function textToHtml(text: string): string {
+  return linkifyEscapedText(escapeHtml(text)).replace(/\n/g, '<br>');
+}
+
+/**
+ * Remove any spelled-out plain-text signature from authored text. Callers
+ * (humans and models alike) habitually type the signature at the end of a
+ * message; the styled SIGNATURE_HTML is appended in its place, so leaving the
+ * plain copy in would double-sign — and, worse, ship the URL as unlinked text.
+ */
+function stripPlainSignature(text: string): { text: string; stripped: boolean } {
+  if (!text.includes(SIGNATURE_TEXT)) return { text, stripped: false };
+  return {
+    text: text.split(SIGNATURE_TEXT).join('').replace(/\s+$/, ''),
+    stripped: true,
+  };
+}
+
+/**
+ * Return a copy of `body` as signed HTML. Every outgoing message goes out as
+ * HTML: a plain-text body is converted (escaped, bare URLs hyperlinked, line
+ * breaks preserved) rather than sent as text, whose URLs render unlinked in
+ * most clients. Any spelled-out plain signature is stripped and replaced by
+ * the styled SIGNATURE_HTML. A body already carrying SIGNATURE_HTML is
+ * returned unchanged.
  *
  * HTML bodies are also wrapped in an explicit font (FONT_STACK/FONT_SIZE).
  * Without it the authored markup carries no font-family and inherits OWA's base
@@ -80,19 +149,24 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
   const content = body.content ?? '';
   const contentType = (body.contentType ?? 'text').toLowerCase();
 
-  if (content.includes(SIGNATURE_MARKER)) {
+  if (content.includes(SIGNED_MARKER)) {
     return body;
   }
 
-  if (contentType === 'html') {
-    const wrapped = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${content}</div>`;
-    return { contentType: 'html', content: wrapped + SIGNATURE_HTML };
+  // A converted text body is <br>-joined lines with no block margins, so add a
+  // blank line before the signature; authored HTML's last <p> margin (see the
+  // spacer rationale atop this file) already supplies that gap.
+  const rendered =
+    contentType === 'html'
+      ? linkifyHtml(content)
+      : textToHtml(stripPlainSignature(content).text).concat('<br>');
+
+  if (!rendered || rendered === '<br>') {
+    return { contentType: 'html', content: SIGNATURE_HTML };
   }
 
-  return {
-    contentType: body.contentType ?? 'text',
-    content: content ? `${content}\n\n${SIGNATURE_TEXT}` : SIGNATURE_TEXT,
-  };
+  const wrapped = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${rendered}</div>`;
+  return { contentType: 'html', content: wrapped + SIGNATURE_HTML };
 }
 
 /**
@@ -110,12 +184,28 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
  * font-family is left to its author. A full <html>…<body> document gets the
  * wrapper inside <body> rather than around the document, which would be
  * malformed.
+ *
+ * Like every other outgoing path, the result is always HTML with bare URLs
+ * hyperlinked: a plain-text replacement body is converted rather than stored
+ * as text. The signature stays the caller's responsibility on this path (a
+ * PATCH replaces the whole body, which normally already carries it) — but a
+ * spelled-out plain-text signature is upgraded to the styled SIGNATURE_HTML so
+ * it keeps its hyperlink.
  */
 export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
   if (!body) return body;
-  if ((body.contentType ?? 'text').toLowerCase() !== 'html') return body;
 
-  const content = ensureParagraphSpacing(body.content ?? '');
+  if ((body.contentType ?? 'text').toLowerCase() !== 'html') {
+    const { text, stripped } = stripPlainSignature(body.content ?? '');
+    const rendered = textToHtml(text);
+    const wrapped = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${rendered}${stripped ? '<br>' : ''}</div>`;
+    return {
+      contentType: 'html',
+      content: stripped ? wrapped + SIGNATURE_HTML : wrapped,
+    };
+  }
+
+  const content = ensureParagraphSpacing(linkifyHtml(body.content ?? ''));
 
   // The author set their own font. Respect it.
   if (/font-family/i.test(content)) return { contentType: 'html', content };
@@ -129,7 +219,8 @@ export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
     const end = closeAt > -1 ? closeAt : content.length;
     return {
       contentType: 'html',
-      content: content.slice(0, start) + open + content.slice(start, end) + '</div>' + content.slice(end),
+      content:
+        content.slice(0, start) + open + content.slice(start, end) + '</div>' + content.slice(end),
     };
   }
 
@@ -167,23 +258,24 @@ export function ensureParagraphSpacing(html: string): string {
  * margin reset.
  */
 export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): string {
-  // Same double-signing guard as withSignature(): a comment that already carries
-  // the signature must not get a second one appended beneath it.
-  const signed = (comment ?? '').includes(SIGNATURE_MARKER);
+  if (opts?.raw) {
+    const html = comment ?? '';
+    // Double-signing guard: a raw HTML comment that already carries the styled
+    // signature must not get a second one appended beneath it.
+    const signed = html.includes(SIGNED_MARKER);
+    // No spacer here: the trailing <p> already carries PARAGRAPH_BLOCK_STYLE's
+    // 1em bottom margin, and a <br> would double the gap.
+    const rendered = ensureParagraphSpacing(linkifyHtml(html));
+    const commentHtml = html ? `<div style="${BODY_STYLE}">${rendered}</div>` : '';
+    return signed ? commentHtml : commentHtml + SIGNATURE_HTML;
+  }
 
-  // A plain-text comment is rendered as <br>-joined lines, so its wrapper ends
-  // flush against the last line and the signature would butt directly onto it.
-  // Raw HTML comments don't need this: their trailing <p> already carries
-  // PARAGRAPH_BLOCK_STYLE's 1em bottom margin, and a <br> would double the gap.
-  const needsSpacer = !opts?.raw && !!comment && !signed;
-
-  const rendered = opts?.raw
-    ? ensureParagraphSpacing(comment ?? '')
-    : escapeHtml(comment ?? '').replace(/\n/g, '<br>');
-  const inner = needsSpacer ? `${rendered}<br>` : rendered;
-
-  const commentHtml = comment ? `<div style="${BODY_STYLE}">${inner}</div>` : '';
-  if (signed) return commentHtml;
+  // Plain-text comment: any spelled-out signature is stripped so the styled
+  // one below is the only copy, then the text is escaped with bare URLs
+  // hyperlinked. The <br>-joined lines end flush against the wrapper, so a
+  // spacer keeps the signature from butting onto the last line.
+  const { text } = stripPlainSignature(comment ?? '');
+  const commentHtml = text ? `<div style="${BODY_STYLE}">${textToHtml(text)}<br></div>` : '';
   return commentHtml + SIGNATURE_HTML;
 }
 
@@ -199,18 +291,18 @@ export function injectReplyTop(
 ): MessageBody {
   const content = draftBody?.content ?? '';
   const contentType = (draftBody?.contentType ?? 'html').toLowerCase();
-
-  if (contentType !== 'html') {
-    const top =
-      comment && comment.includes(SIGNATURE_MARKER)
-        ? comment
-        : comment
-          ? `${comment}\n\n${SIGNATURE_TEXT}`
-          : SIGNATURE_TEXT;
-    return { contentType: draftBody?.contentType ?? 'text', content: `${top}\n\n${content}` };
-  }
-
   const top = buildReplyTopHtml(comment, opts);
+
+  // A text skeleton (Graph produces one when the original message was plain
+  // text) is converted so the reply still goes out as HTML with a styled,
+  // hyperlinked signature; the quoted history keeps its line breaks and gets
+  // its URLs linked like everything else.
+  if (contentType !== 'html') {
+    const quoted = content
+      ? `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${textToHtml(content)}</div>`
+      : '';
+    return { contentType: 'html', content: top + quoted };
+  }
   const bodyOpen = content.match(/<body[^>]*>/i);
   if (bodyOpen && bodyOpen.index !== undefined) {
     const insertAt = bodyOpen.index + bodyOpen[0].length;
