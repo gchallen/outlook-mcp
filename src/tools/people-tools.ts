@@ -28,7 +28,7 @@ export class PeopleTools {
 
     const response = await this.client
       .api('/me/people')
-      .query({ '$search': '"' + searchTerm + '"' })
+      .query({ $search: '"' + searchTerm + '"' })
       .top(topLimit)
       .get();
 

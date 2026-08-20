@@ -96,8 +96,12 @@ describe('signature', () => {
 
     it('styles raw HTML <p> blocks so they survive the margin reset with even leading', () => {
       const html = buildReplyTopHtml('<p>One</p><p>Two</p>', { raw: true });
-      expect(html).toContain('<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">One</p>');
-      expect(html).toContain('<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">Two</p>');
+      expect(html).toContain(
+        '<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">One</p>',
+      );
+      expect(html).toContain(
+        '<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">Two</p>',
+      );
     });
 
     it('wraps the comment with max-width and opacity but no hardcoded text color', () => {
