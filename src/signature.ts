@@ -34,21 +34,29 @@ export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
 // fixed color (e.g. #333) reads fine on white but stays dark in a client's dark
 // mode, where it can vanish against a dark background. Leaving color unset lets
 // the text inherit the client's default foreground (near-black in light mode,
-// near-white in dark mode). `opacity:0.8` then dims it relative to whatever
-// background is behind it, so it reads slightly softer in BOTH modes — and 0.8
-// over white is identical to the old #333. Outlook desktop ignores opacity and
-// simply shows full-contrast default text, which is a safe degradation.
-// `max-width` caps the line length for readability on wide screens; clients that
-// don't honor it fall back to full width.
-const BODY_STYLE = `font-family:${FONT_STACK}; font-size:${FONT_SIZE}; max-width:40em; opacity:0.8`;
+// near-white in dark mode).
+//
+// Deliberately NO max-width and NO opacity: earlier versions capped the line
+// length (max-width:40em) and dimmed the comment (opacity:0.8), which made
+// authored content render visibly different from paragraphs the user types in
+// the OWA composer — a provenance tell. Matching OWA-native rendering wins over
+// those readability tweaks.
+const BODY_STYLE = `font-family:${FONT_STACK}; font-size:${FONT_SIZE}`;
 
-// Block-level style applied to each authored <p>. A paragraph's line-height is
-// resolved from the *block's* font-size, not an inner <span>'s — and when Outlook
-// reflows an edited draft it tends to move font-size onto inline spans, leaving the
-// <p> block to fall back to the reply's default and render taller, uneven leading.
-// Pinning font-size AND an explicit line-height on the block keeps the leading
-// deterministic and consistent across paragraphs regardless of that reflow.
-const PARAGRAPH_BLOCK_STYLE = `margin:0 0 1em 0; font-size:${FONT_SIZE}; line-height:1.4`;
+// Block-level style applied to each authored <p>, matching what the OWA
+// composer writes for typed paragraphs (`margin-top:1em; margin-bottom:1em`) so
+// authored and hand-typed paragraphs are indistinguishable. Symmetric margins
+// collapse between adjacent paragraphs, so spacing equals the old bottom-only
+// margin while boundary gaps against OWA-typed paragraphs now match too.
+//
+// font-size is pinned on the block because a paragraph's line box is resolved
+// from the *block's* font-size, not an inner <span>'s — when Outlook reflows an
+// edited draft it moves font-size onto spans, and an unstyled block would fall
+// back to the reply skeleton's default and render taller, uneven leading.
+// Deliberately NO explicit line-height: OWA-typed paragraphs use the default
+// leading, and pinning a different value (an earlier version used 1.4) made
+// authored paragraphs render taller than typed ones.
+const PARAGRAPH_BLOCK_STYLE = `margin-top:1em; margin-bottom:1em; font-size:${FONT_SIZE}`;
 
 // Marker used to detect an already-signed HTML body and avoid double-signing.
 // Matches the id on SIGNATURE_HTML's wrapper — NOT the bare domain, which also
@@ -232,7 +240,7 @@ export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
  * in its <head>, which collapses the vertical spacing between <p> paragraphs in an
  * injected HTML comment so they render as one run-on block. Inline styles win over that
  * <style> reset in Outlook and other clients, so give every bare <p> the block-level
- * PARAGRAPH_BLOCK_STYLE (bottom margin for spacing, plus font-size and line-height so
+ * PARAGRAPH_BLOCK_STYLE (OWA-style symmetric margins for spacing, plus font-size so
  * leading is deterministic and consistent). This keeps authored `<p>`-per-paragraph HTML
  * rendering with real breaks and even leading, no hand-inserted `<div><br></div>` lines.
  */
@@ -243,7 +251,7 @@ export function ensureParagraphSpacing(html: string): string {
     if (styleMatch) {
       // Respect an author-specified margin; otherwise merge one into the existing style.
       if (/margin/i.test(styleMatch[2])) return match;
-      const merged = `${styleMatch[2].trim().replace(/;\s*$/, '')}; margin:0 0 1em 0`;
+      const merged = `${styleMatch[2].trim().replace(/;\s*$/, '')}; margin-top:1em; margin-bottom:1em`;
       return `<${tag}${a.replace(styleMatch[0], `style="${merged}"`)}>`;
     }
     return `<${tag}${a} style="${PARAGRAPH_BLOCK_STYLE}">`;

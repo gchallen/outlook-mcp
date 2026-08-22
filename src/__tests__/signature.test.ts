@@ -182,28 +182,30 @@ describe('signature', () => {
     it('styles raw HTML <p> blocks so they survive the margin reset with even leading', () => {
       const html = buildReplyTopHtml('<p>One</p><p>Two</p>', { raw: true });
       expect(html).toContain(
-        '<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">One</p>',
+        '<p style="margin-top:1em; margin-bottom:1em; font-size:11pt">One</p>',
       );
       expect(html).toContain(
-        '<p style="margin:0 0 1em 0; font-size:11pt; line-height:1.4">Two</p>',
+        '<p style="margin-top:1em; margin-bottom:1em; font-size:11pt">Two</p>',
       );
     });
 
-    it('wraps the comment with max-width and opacity but no hardcoded text color', () => {
+    it('renders the comment OWA-native: no max-width, no opacity, no hardcoded color', () => {
       const html = buildReplyTopHtml('Hi');
       // Inspect just the comment wrapper, above the (separately styled) signature.
       const commentPart = html.slice(0, html.indexOf(SIGNATURE_HTML));
-      expect(commentPart).toContain('max-width:40em');
-      expect(commentPart).toContain('opacity:0.8');
+      // Earlier versions narrowed and dimmed authored comments, which made them
+      // visibly different from paragraphs typed in the OWA composer.
+      expect(commentPart).not.toContain('max-width');
+      expect(commentPart).not.toContain('opacity');
       // No fixed color that would break the recipient's dark mode.
       expect(commentPart).not.toContain('color:');
     });
   });
 
   describe('ensureParagraphSpacing', () => {
-    const BLOCK = 'margin:0 0 1em 0; font-size:11pt; line-height:1.4';
+    const BLOCK = 'margin-top:1em; margin-bottom:1em; font-size:11pt';
 
-    it('gives a bare <p> the block style (spacing + font-size + line-height)', () => {
+    it('gives a bare <p> the block style (OWA-style spacing + font-size)', () => {
       expect(ensureParagraphSpacing('<p>Hi</p>')).toBe(`<p style="${BLOCK}">Hi</p>`);
     });
 
@@ -215,7 +217,7 @@ describe('signature', () => {
 
     it('merges a margin into an existing style that lacks one', () => {
       expect(ensureParagraphSpacing('<p style="color:red">Hi</p>')).toBe(
-        '<p style="color:red; margin:0 0 1em 0">Hi</p>',
+        '<p style="color:red; margin-top:1em; margin-bottom:1em">Hi</p>',
       );
     });
 
@@ -300,7 +302,7 @@ describe('withOutgoingFont', () => {
 
   it('gives bare paragraphs their block spacing', () => {
     const out = withOutgoingFont({ contentType: 'html', content: '<p>One</p><p>Two</p>' });
-    expect(out?.content).toContain('margin:0 0 1em 0');
+    expect(out?.content).toContain('margin-top:1em; margin-bottom:1em');
   });
 
   it('leaves an author-styled body alone', () => {
