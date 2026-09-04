@@ -17,22 +17,31 @@ A Model Context Protocol (MCP) server that provides access to Microsoft Outlook 
 
 ## Message formatting (lists & signatures)
 
-Email bodies take a `body.contentType` of either `"text"` or `"html"`:
+Email bodies take a `body.contentType` of either `"text"` or `"html"`. Every
+message goes out as HTML, in the same markup the Outlook web composer writes for
+typed text, so authored and hand-typed paragraphs are indistinguishable when a
+draft is edited in OWA:
 
+- **A `"text"` body** is escaped, its bare URLs are hyperlinked, and each line
+  becomes a font-bearing `<div>`; a blank line becomes `<div><br></div>`,
+  exactly as OWA represents one. A leading `-` renders as a literal dash — it
+  does **not** become a bullet.
 - **Use `"html"` for any bulleted or numbered lists or other rich formatting.**
   Wrap items in `<ul><li>…</li></ul>` (or `<ol><li>…</li></ol>`) and paragraphs
-  in `<p>`. A plain `"text"` body renders a leading `-` as a literal dash — it
-  does **not** become a bullet.
+  in `<p>`. Each `<p>` is rewritten as the same OWA-style `<div>` block, with a
+  blank-line block between paragraphs (and after a list) instead of margins.
+  Author margins on a `<p>` are dropped; other inline styles are kept.
 - **Signatures:** `create_message`, `send_mail`, and the reply/forward tools
-  append the configured signature automatically — the styled HTML signature for
-  `"html"` bodies, the plain-text signature for `"text"` bodies. A body that
-  already contains the signature (detected by the `geoffreychallen.com` marker)
-  is left untouched, so it is never doubled.
-- **`update_message` writes the body verbatim** and does **not** inject a
-  signature. When you replace a draft's body, include the full HTML and the
-  signature yourself. Note: editing a draft can rotate its message ID, so
-  re-fetch the draft (via `list_messages`/`get_message`) before a follow-up
-  `update_message`.
+  append the styled HTML signature automatically. It opens with its own blank
+  line, so never end a body with one. A body that already contains the
+  signature (detected by its `id="Signature"` wrapper) is left untouched, so it
+  is never doubled; a spelled-out plain-text signature is replaced by the
+  styled one.
+- **`update_message`** applies the same font and paragraph normalization to a
+  replacement body but does **not** inject a signature. When you replace a
+  draft's body, include the full HTML and the signature yourself. Note: editing
+  a draft can rotate its message ID, so re-fetch the draft (via
+  `list_messages`/`get_message`) before a follow-up `update_message`.
 
 ## Installation
 

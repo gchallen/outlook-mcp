@@ -9,11 +9,8 @@
 // color affordance, and clients expect/adjust link colors. Outlook desktop
 // ignores opacity and shows full-contrast default text — a safe degradation.
 //
-// No leading blank-line spacer: the body's last paragraph already carries a 1em
-// bottom margin (PARAGRAPH_BLOCK_STYLE), so a <br> here would stack a second empty
-// line above the signature. The margin supplies the single gap on its own.
 // Single source of truth for the outgoing font, shared by the signature, the
-// comment wrapper, and each authored <p>. Arial is web-safe (present on
+// comment wrapper, and every authored block. Arial is web-safe (present on
 // effectively every client, including Outlook desktop's Word engine, which
 // ignores web fonts), so recipients see the intended face rather than a
 // fallback. Keep this in sync with the OWA "Compose and reply" default font so
@@ -21,42 +18,53 @@
 const FONT_STACK = 'Arial,Helvetica,sans-serif';
 const FONT_SIZE = '11pt';
 
+// Inline style carried by every authored block AND by the wrapper around
+// authored content. Deliberately sets NO text color: a fixed color (e.g. #333)
+// reads fine on white but stays dark in a client's dark mode, where it can
+// vanish against a dark background. Leaving color unset lets the text inherit
+// the client's default foreground (near-black in light mode, near-white in
+// dark mode).
+//
+// Deliberately NO max-width, NO opacity, NO margins and NO line-height: earlier
+// versions narrowed and dimmed authored comments, and spaced paragraphs with
+// margins or a pinned leading, all of which rendered visibly different from
+// paragraphs the user types in the OWA composer — a provenance tell.
+const BLOCK_STYLE = `font-family:${FONT_STACK}; font-size:${FONT_SIZE}`;
+const BODY_STYLE = BLOCK_STYLE;
+
+/**
+ * One authored line, in exactly the form the OWA composer writes for a typed
+ * line: a <div> carrying the font on the block itself. Matching OWA's own
+ * element and style is what keeps authored and hand-typed paragraphs
+ * indistinguishable, and it is the reason this module emits <div>s rather
+ * than <p>s. When a draft holding <p> blocks is edited in OWA, the editor moves
+ * the font-size off the block onto inner <span>s, and the block's line box is
+ * then resolved from the reply skeleton's default size — taller leading than
+ * the neighbouring typed <div>s. OWA leaves its own <div> structure alone.
+ *
+ * An empty line holds a lone <br>, which is how OWA represents a blank line.
+ */
+export function block(inner: string): string {
+  return `<div style="${BLOCK_STYLE}">${inner || '<br>'}</div>`;
+}
+
+/** A blank line between paragraphs, OWA-style: an empty block holding one <br>. */
+export const BLANK_LINE = block('');
+
+// The signature opens with a blank line, exactly as the OWA-configured
+// signature block does, so it never butts onto the last line of the message
+// regardless of how that message was authored. Content preceding the
+// signature must therefore NOT end in its own blank line (see
+// normalizeParagraphs and textToBlocks), or the gap doubles.
 export const SIGNATURE_HTML =
   '<div id="Signature">' +
-  `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">` +
+  BLANK_LINE +
+  `<div style="${BLOCK_STYLE}">` +
   '<span style="opacity:0.6">Geoffrey Challen&nbsp;// </span>' +
   '<a href="https://geoffreychallen.com" title="https://geoffreychallen.com" style="color:rgb(12,100,192)">https://geoffreychallen.com</a>' +
   '</div></div>';
 
 export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
-
-// Inline style for the comment wrapper. Deliberately sets NO text color: a
-// fixed color (e.g. #333) reads fine on white but stays dark in a client's dark
-// mode, where it can vanish against a dark background. Leaving color unset lets
-// the text inherit the client's default foreground (near-black in light mode,
-// near-white in dark mode).
-//
-// Deliberately NO max-width and NO opacity: earlier versions capped the line
-// length (max-width:40em) and dimmed the comment (opacity:0.8), which made
-// authored content render visibly different from paragraphs the user types in
-// the OWA composer — a provenance tell. Matching OWA-native rendering wins over
-// those readability tweaks.
-const BODY_STYLE = `font-family:${FONT_STACK}; font-size:${FONT_SIZE}`;
-
-// Block-level style applied to each authored <p>, matching what the OWA
-// composer writes for typed paragraphs (`margin-top:1em; margin-bottom:1em`) so
-// authored and hand-typed paragraphs are indistinguishable. Symmetric margins
-// collapse between adjacent paragraphs, so spacing equals the old bottom-only
-// margin while boundary gaps against OWA-typed paragraphs now match too.
-//
-// font-size is pinned on the block because a paragraph's line box is resolved
-// from the *block's* font-size, not an inner <span>'s — when Outlook reflows an
-// edited draft it moves font-size onto spans, and an unstyled block would fall
-// back to the reply skeleton's default and render taller, uneven leading.
-// Deliberately NO explicit line-height: OWA-typed paragraphs use the default
-// leading, and pinning a different value (an earlier version used 1.4) made
-// authored paragraphs render taller than typed ones.
-const PARAGRAPH_BLOCK_STYLE = `margin-top:1em; margin-bottom:1em; font-size:${FONT_SIZE}`;
 
 // Marker used to detect an already-signed HTML body and avoid double-signing.
 // Matches the id on SIGNATURE_HTML's wrapper — NOT the bare domain, which also
@@ -64,6 +72,7 @@ const PARAGRAPH_BLOCK_STYLE = `margin-top:1em; margin-bottom:1em; font-size:${FO
 // on 'geoffreychallen.com', which meant a comment that spelled out the plain
 // signature suppressed the styled one and shipped as unlinked text.)
 const SIGNED_MARKER = 'id="Signature"';
+const SIGNATURE_OPEN = '<div id="Signature">';
 
 interface MessageBody {
   contentType?: string;
@@ -117,9 +126,28 @@ export function linkifyHtml(html: string): string {
   });
 }
 
-/** Render plain text as HTML: escape, hyperlink bare URLs, keep line breaks. */
+/**
+ * Render plain text as inline HTML: escape, hyperlink bare URLs, keep line
+ * breaks as <br>. Used for quoted history lifted from a text-only reply
+ * skeleton, where a single run of lines is the faithful rendering. Authored
+ * content goes through textToBlocks instead.
+ */
 export function textToHtml(text: string): string {
   return linkifyEscapedText(escapeHtml(text)).replace(/\n/g, '<br>');
+}
+
+/**
+ * Render authored plain text the way OWA renders typed text: one block per
+ * line, with blank lines as empty blocks. Trailing blank lines are dropped so
+ * the signature's own leading blank line supplies the single gap above it.
+ */
+export function textToBlocks(text: string): string {
+  const trimmed = text.replace(/\r/g, '').replace(/\s+$/, '');
+  if (!trimmed) return '';
+  return trimmed
+    .split('\n')
+    .map((line) => block(linkifyEscapedText(escapeHtml(line))))
+    .join('');
 }
 
 /**
@@ -137,19 +165,60 @@ function stripPlainSignature(text: string): { text: string; stripped: boolean } 
 }
 
 /**
+ * Rewrite authored <p> paragraphs into OWA-native blocks: each <p> becomes a
+ * font-bearing <div> (see `block`), and the gap between paragraphs becomes a
+ * blank-line block rather than a margin. Lists get the same blank line after
+ * them that a paragraph does, unless they are nested inside another list item.
+ *
+ * Why not keep <p> with margins? Graph's reply skeleton carries
+ * `<style>p{margin-top:0;margin-bottom:0}</style>`, so bare <p>s collapse into
+ * one run-on block; inline margins fix that, but a <p> is still not what the
+ * OWA composer writes, and OWA restyles foreign <p>s on edit (font-size moved
+ * into spans, block left at the default size), which is the uneven leading the
+ * user sees between authored and typed paragraphs. Emitting OWA's own
+ * structure sidesteps all of it.
+ *
+ * Any margin in an author-specified <p> style is dropped (spacing is now the
+ * blank line's job); other declarations are kept, with the font added when the
+ * author did not set one. The trailing blank line is stripped, and one
+ * immediately before the signature is removed, since the signature carries its
+ * own.
+ */
+export function normalizeParagraphs(html: string): string {
+  let out = html.replace(/<p(\s[^>]*)?>/gi, (match, attrs?: string) => {
+    const a = attrs ?? '';
+    const styleMatch = a.match(/\bstyle\s*=\s*("|')([\s\S]*?)\1/i);
+    if (!styleMatch) return `<div${a} style="${BLOCK_STYLE}">`;
+    const decls = styleMatch[2]
+      .split(';')
+      .map((d) => d.trim())
+      .filter((d) => d && !/^margin/i.test(d));
+    if (!decls.some((d) => /^font-family/i.test(d))) decls.push(`font-family:${FONT_STACK}`);
+    if (!decls.some((d) => /^font-size/i.test(d))) decls.push(`font-size:${FONT_SIZE}`);
+    return `<div${a.replace(styleMatch[0], `style="${decls.join('; ')}"`)}>`;
+  });
+  out = out.replace(/<\/p>/gi, `</div>${BLANK_LINE}`);
+  out = out.replace(/<\/(ul|ol)>(?!\s*<\/(li|ul|ol)>)/gi, (m) => m + BLANK_LINE);
+  out = out.split(BLANK_LINE + SIGNATURE_OPEN).join(SIGNATURE_OPEN);
+  while (out.endsWith(BLANK_LINE)) out = out.slice(0, -BLANK_LINE.length);
+  return out;
+}
+
+/**
  * Return a copy of `body` as signed HTML. Every outgoing message goes out as
- * HTML: a plain-text body is converted (escaped, bare URLs hyperlinked, line
- * breaks preserved) rather than sent as text, whose URLs render unlinked in
- * most clients. Any spelled-out plain signature is stripped and replaced by
- * the styled SIGNATURE_HTML. A body already carrying SIGNATURE_HTML is
- * returned unchanged.
+ * HTML: a plain-text body is converted (escaped, bare URLs hyperlinked, one
+ * OWA-style block per line) rather than sent as text, whose URLs render
+ * unlinked in most clients. An HTML body has its <p> paragraphs normalized to
+ * the same block structure. Any spelled-out plain signature is stripped and
+ * replaced by the styled SIGNATURE_HTML. A body already carrying
+ * SIGNATURE_HTML is returned unchanged.
  *
  * HTML bodies are also wrapped in an explicit font (FONT_STACK/FONT_SIZE).
- * Without it the authored markup carries no font-family and inherits OWA's base
- * UI font (Segoe UI) when read or edited there — even though the user's compose
- * default is something else, because that default only styles newly typed text,
- * not stored HTML. Stamping the font here makes every outgoing body render in
- * the intended face and keeps OWA from reflowing it on edit.
+ * Without it list items and other non-block markup inherit OWA's base UI font
+ * (Segoe UI) when read or edited there — even though the user's compose
+ * default is something else, because that default only styles newly typed
+ * text, not stored HTML. Stamping the font here makes every outgoing body
+ * render in the intended face and keeps OWA from reflowing it on edit.
  */
 export function withSignature(body?: MessageBody): MessageBody | undefined {
   if (!body) return body;
@@ -161,24 +230,21 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
     return body;
   }
 
-  // A converted text body is <br>-joined lines with no block margins, so add a
-  // blank line before the signature; authored HTML's last <p> margin (see the
-  // spacer rationale atop this file) already supplies that gap.
   const rendered =
     contentType === 'html'
-      ? linkifyHtml(content)
-      : textToHtml(stripPlainSignature(content).text).concat('<br>');
+      ? normalizeParagraphs(linkifyHtml(content))
+      : textToBlocks(stripPlainSignature(content).text);
 
-  if (!rendered || rendered === '<br>') {
+  if (!rendered) {
     return { contentType: 'html', content: SIGNATURE_HTML };
   }
 
-  const wrapped = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${rendered}</div>`;
+  const wrapped = `<div style="${BODY_STYLE}">${rendered}</div>`;
   return { contentType: 'html', content: wrapped + SIGNATURE_HTML };
 }
 
 /**
- * Stamp the outgoing font onto an HTML body and normalize paragraph spacing,
+ * Stamp the outgoing font onto an HTML body and normalize its paragraphs,
  * without touching the signature.
  *
  * `withSignature` does this on the create path, but a PATCH that replaces a
@@ -205,20 +271,19 @@ export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
 
   if ((body.contentType ?? 'text').toLowerCase() !== 'html') {
     const { text, stripped } = stripPlainSignature(body.content ?? '');
-    const rendered = textToHtml(text);
-    const wrapped = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">${rendered}${stripped ? '<br>' : ''}</div>`;
+    const wrapped = `<div style="${BODY_STYLE}">${textToBlocks(text)}</div>`;
     return {
       contentType: 'html',
       content: stripped ? wrapped + SIGNATURE_HTML : wrapped,
     };
   }
 
-  const content = ensureParagraphSpacing(linkifyHtml(body.content ?? ''));
+  const content = normalizeParagraphs(linkifyHtml(body.content ?? ''));
 
   // The author set their own font. Respect it.
   if (/font-family/i.test(content)) return { contentType: 'html', content };
 
-  const open = `<div style="font-family:${FONT_STACK}; font-size:${FONT_SIZE}">`;
+  const open = `<div style="${BODY_STYLE}">`;
 
   const bodyOpen = content.match(/<body[^>]*>/i);
   if (bodyOpen && bodyOpen.index !== undefined) {
@@ -236,34 +301,10 @@ export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
 }
 
 /**
- * Graph's reply/forward skeleton carries `<style>p{margin-top:0;margin-bottom:0}</style>`
- * in its <head>, which collapses the vertical spacing between <p> paragraphs in an
- * injected HTML comment so they render as one run-on block. Inline styles win over that
- * <style> reset in Outlook and other clients, so give every bare <p> the block-level
- * PARAGRAPH_BLOCK_STYLE (OWA-style symmetric margins for spacing, plus font-size so
- * leading is deterministic and consistent). This keeps authored `<p>`-per-paragraph HTML
- * rendering with real breaks and even leading, no hand-inserted `<div><br></div>` lines.
- */
-export function ensureParagraphSpacing(html: string): string {
-  return html.replace(/<(p)(\s[^>]*)?>/gi, (match, tag: string, attrs?: string) => {
-    const a = attrs ?? '';
-    const styleMatch = a.match(/\bstyle\s*=\s*("|')([\s\S]*?)\1/i);
-    if (styleMatch) {
-      // Respect an author-specified margin; otherwise merge one into the existing style.
-      if (/margin/i.test(styleMatch[2])) return match;
-      const merged = `${styleMatch[2].trim().replace(/;\s*$/, '')}; margin-top:1em; margin-bottom:1em`;
-      return `<${tag}${a.replace(styleMatch[0], `style="${merged}"`)}>`;
-    }
-    return `<${tag}${a} style="${PARAGRAPH_BLOCK_STYLE}">`;
-  });
-}
-
-/**
  * Build the top portion of a reply/forward body: an optional comment followed
  * by the signature, in the user's style. `comment` is treated as plain text
  * unless `opts.raw` is set, in which case it is inserted as-is (already HTML),
- * with paragraph spacing normalized so <p> blocks survive the reply skeleton's
- * margin reset.
+ * with its paragraphs normalized to OWA-native blocks.
  */
 export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): string {
   if (opts?.raw) {
@@ -271,19 +312,15 @@ export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): s
     // Double-signing guard: a raw HTML comment that already carries the styled
     // signature must not get a second one appended beneath it.
     const signed = html.includes(SIGNED_MARKER);
-    // No spacer here: the trailing <p> already carries PARAGRAPH_BLOCK_STYLE's
-    // 1em bottom margin, and a <br> would double the gap.
-    const rendered = ensureParagraphSpacing(linkifyHtml(html));
-    const commentHtml = html ? `<div style="${BODY_STYLE}">${rendered}</div>` : '';
+    const rendered = normalizeParagraphs(linkifyHtml(html));
+    const commentHtml = rendered ? `<div style="${BODY_STYLE}">${rendered}</div>` : '';
     return signed ? commentHtml : commentHtml + SIGNATURE_HTML;
   }
 
   // Plain-text comment: any spelled-out signature is stripped so the styled
-  // one below is the only copy, then the text is escaped with bare URLs
-  // hyperlinked. The <br>-joined lines end flush against the wrapper, so a
-  // spacer keeps the signature from butting onto the last line.
-  const { text } = stripPlainSignature(comment ?? '');
-  const commentHtml = text ? `<div style="${BODY_STYLE}">${textToHtml(text)}<br></div>` : '';
+  // one below is the only copy, then each line becomes an OWA-style block.
+  const rendered = textToBlocks(stripPlainSignature(comment ?? '').text);
+  const commentHtml = rendered ? `<div style="${BODY_STYLE}">${rendered}</div>` : '';
   return commentHtml + SIGNATURE_HTML;
 }
 

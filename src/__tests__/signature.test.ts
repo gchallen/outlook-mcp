@@ -4,7 +4,9 @@ import {
   withSignature,
   buildReplyTopHtml,
   injectReplyTop,
-  ensureParagraphSpacing,
+  normalizeParagraphs,
+  block,
+  BLANK_LINE,
   withOutgoingFont,
   linkifyEscapedText,
   linkifyHtml,
@@ -30,7 +32,7 @@ describe('signature', () => {
     it('converts a text body to HTML with the styled signature', () => {
       const result = withSignature({ contentType: 'text', content: 'Hello' });
       expect(result?.contentType).toBe('html');
-      expect(result?.content).toContain('Hello<br>');
+      expect(result?.content).toContain(block('Hello'));
       expect(result?.content).toContain(SIGNATURE_HTML);
     });
 
@@ -60,7 +62,7 @@ describe('signature', () => {
     it('treats a missing contentType as text and still emits HTML', () => {
       const result = withSignature({ content: 'Hi' });
       expect(result?.contentType).toBe('html');
-      expect(result?.content).toContain('Hi<br>');
+      expect(result?.content).toContain(block('Hi'));
       expect(result?.content).toContain(SIGNATURE_HTML);
     });
 
@@ -123,20 +125,26 @@ describe('signature', () => {
       expect(html.endsWith(SIGNATURE_HTML)).toBe(true);
     });
 
-    it('converts newlines in the comment to <br>', () => {
+    it('renders each comment line as an OWA-style block', () => {
       const html = buildReplyTopHtml('line1\nline2');
-      expect(html).toContain('line1<br>line2');
+      expect(html).toContain(block('line1') + block('line2'));
     });
 
-    it('separates a plain-text comment from the signature with a blank line', () => {
-      const html = buildReplyTopHtml('line1\nline2');
-      expect(html).toContain(`line1<br>line2<br></div>${SIGNATURE_HTML}`);
+    it('renders a blank line in the comment as an empty block, like OWA', () => {
+      const html = buildReplyTopHtml('one\n\ntwo');
+      expect(html).toContain(block('one') + BLANK_LINE + block('two'));
     });
 
-    it('does not add a spacer after a raw HTML comment, whose <p> margin already spaces it', () => {
+    it('lets the signature supply the single blank line above itself', () => {
+      const html = buildReplyTopHtml('line1\nline2\n\n');
+      expect(html).toContain(`${block('line2')}</div>${SIGNATURE_HTML}`);
+      expect(SIGNATURE_HTML.startsWith(`<div id="Signature">${BLANK_LINE}`)).toBe(true);
+    });
+
+    it('does not stack a second blank line between a raw HTML comment and the signature', () => {
       const html = buildReplyTopHtml('<p>One</p>', { raw: true });
-      expect(html).not.toContain(`</p><br></div>`);
-      expect(html).toContain(`</p></div>${SIGNATURE_HTML}`);
+      expect(html).toContain(`${block('One')}</div>${SIGNATURE_HTML}`);
+      expect(html).not.toContain(BLANK_LINE + BLANK_LINE);
     });
 
     it('replaces a spelled-out plain signature with the styled one', () => {
@@ -179,14 +187,10 @@ describe('signature', () => {
       expect(html.match(/id="Signature"/g)).toHaveLength(1);
     });
 
-    it('styles raw HTML <p> blocks so they survive the margin reset with even leading', () => {
+    it('rewrites raw HTML <p> blocks as OWA-native blocks separated by a blank line', () => {
       const html = buildReplyTopHtml('<p>One</p><p>Two</p>', { raw: true });
-      expect(html).toContain(
-        '<p style="margin-top:1em; margin-bottom:1em; font-size:11pt">One</p>',
-      );
-      expect(html).toContain(
-        '<p style="margin-top:1em; margin-bottom:1em; font-size:11pt">Two</p>',
-      );
+      expect(html).toContain(block('One') + BLANK_LINE + block('Two'));
+      expect(html).not.toContain('<p');
     });
 
     it('renders the comment OWA-native: no max-width, no opacity, no hardcoded color', () => {
@@ -202,39 +206,61 @@ describe('signature', () => {
     });
   });
 
-  describe('ensureParagraphSpacing', () => {
-    const BLOCK = 'margin-top:1em; margin-bottom:1em; font-size:11pt';
+  describe('normalizeParagraphs', () => {
+    const BLOCK = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt';
 
-    it('gives a bare <p> the block style (OWA-style spacing + font-size)', () => {
-      expect(ensureParagraphSpacing('<p>Hi</p>')).toBe(`<p style="${BLOCK}">Hi</p>`);
+    it('turns a bare <p> into a font-bearing <div> with no trailing blank line', () => {
+      expect(normalizeParagraphs('<p>Hi</p>')).toBe(`<div style="${BLOCK}">Hi</div>`);
     });
 
-    it('preserves other attributes while adding the block style', () => {
-      expect(ensureParagraphSpacing('<p class="x">Hi</p>')).toBe(
-        `<p class="x" style="${BLOCK}">Hi</p>`,
+    it('preserves other attributes while converting', () => {
+      expect(normalizeParagraphs('<p class="x">Hi</p>')).toBe(
+        `<div class="x" style="${BLOCK}">Hi</div>`,
       );
     });
 
-    it('merges a margin into an existing style that lacks one', () => {
-      expect(ensureParagraphSpacing('<p style="color:red">Hi</p>')).toBe(
-        '<p style="color:red; margin-top:1em; margin-bottom:1em">Hi</p>',
+    it('keeps an author style but adds the missing font declarations', () => {
+      expect(normalizeParagraphs('<p style="color:red">Hi</p>')).toBe(
+        `<div style="color:red; ${BLOCK}">Hi</div>`,
       );
     });
 
-    it('leaves an author-specified margin untouched', () => {
-      const html = '<p style="margin:2em 0">Hi</p>';
-      expect(ensureParagraphSpacing(html)).toBe(html);
+    it("drops author margins: spacing is the blank line's job now", () => {
+      expect(normalizeParagraphs('<p style="margin:2em 0">Hi</p>')).toBe(
+        `<div style="${BLOCK}">Hi</div>`,
+      );
     });
 
-    it('is case-insensitive and handles multiple paragraphs', () => {
-      expect(ensureParagraphSpacing('<P>a</P><p>b</p>')).toBe(
-        `<P style="${BLOCK}">a</P><p style="${BLOCK}">b</p>`,
+    it('respects an author font', () => {
+      expect(normalizeParagraphs('<p style="font-family:Georgia">Hi</p>')).toBe(
+        '<div style="font-family:Georgia; font-size:11pt">Hi</div>',
+      );
+    });
+
+    it('is case-insensitive and separates paragraphs with a blank line', () => {
+      expect(normalizeParagraphs('<P>a</P><p>b</p>')).toBe(
+        `<div style="${BLOCK}">a</div>${BLANK_LINE}<div style="${BLOCK}">b</div>`,
       );
     });
 
     it('does not touch non-paragraph tags', () => {
       const html = '<ul><li>a</li></ul>';
-      expect(ensureParagraphSpacing(html)).toBe(html);
+      expect(normalizeParagraphs(html)).toBe(html);
+    });
+
+    it('gives a list the same blank line after it that a paragraph gets', () => {
+      expect(normalizeParagraphs('<p>a</p><ul><li>b</li></ul><p>c</p>')).toBe(
+        `${block('a')}${BLANK_LINE}<ul><li>b</li></ul>${BLANK_LINE}${block('c')}`,
+      );
+    });
+
+    it('does not insert a blank line inside a nested list', () => {
+      const html = '<ul><li>a<ul><li>b</li></ul></li></ul>';
+      expect(normalizeParagraphs(html)).toBe(html);
+    });
+
+    it('removes the blank line before an existing signature, which carries its own', () => {
+      expect(normalizeParagraphs(`<p>Hi</p>${SIGNATURE_HTML}`)).toBe(block('Hi') + SIGNATURE_HTML);
     });
   });
 
@@ -300,9 +326,15 @@ describe('withOutgoingFont', () => {
     expect(out?.content).toContain('font-size:11pt');
   });
 
-  it('gives bare paragraphs their block spacing', () => {
+  it('rewrites bare paragraphs as blocks separated by a blank line', () => {
     const out = withOutgoingFont({ contentType: 'html', content: '<p>One</p><p>Two</p>' });
-    expect(out?.content).toContain('margin-top:1em; margin-bottom:1em');
+    expect(out?.content).toContain(block('One') + BLANK_LINE + block('Two'));
+    expect(out?.content).not.toContain('margin');
+  });
+
+  it('separates a plain-text replacement body from its upgraded signature with one blank line', () => {
+    const out = withOutgoingFont({ contentType: 'text', content: `Hi\n\n${SIGNATURE_TEXT}` });
+    expect(out?.content).toContain(`${block('Hi')}</div>${SIGNATURE_HTML}`);
   });
 
   it('leaves an author-styled body alone', () => {

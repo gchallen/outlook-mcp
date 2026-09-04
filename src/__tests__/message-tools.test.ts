@@ -1,5 +1,5 @@
 import { MessageTools } from '../tools/message-tools';
-import { SIGNATURE_HTML } from '../signature';
+import { SIGNATURE_HTML, block } from '../signature';
 import { Client } from '@microsoft/microsoft-graph-client';
 
 jest.mock('@microsoft/microsoft-graph-client');
@@ -105,7 +105,7 @@ describe('MessageTools', () => {
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages');
       const posted = mockRequest.post.mock.calls[0][0];
       expect(posted.subject).toBe('Hi');
-      expect(posted.body.content).toBe(wrappedHtmlBody('<p>Body</p>') + SIGNATURE_HTML);
+      expect(posted.body.content).toBe(wrappedHtmlBody(block('Body')) + SIGNATURE_HTML);
     });
 
     it('leaves a body undefined when none is provided', async () => {
@@ -155,7 +155,7 @@ describe('MessageTools', () => {
       expect(mockClient.api).toHaveBeenCalledWith('/me/sendMail');
       const posted = mockRequest.post.mock.calls[0][0];
       expect(posted.saveToSentItems).toBe(true);
-      expect(posted.message.body.content).toBe(wrappedHtmlBody('<p>Hello</p>') + SIGNATURE_HTML);
+      expect(posted.message.body.content).toBe(wrappedHtmlBody(block('Hello')) + SIGNATURE_HTML);
       expect(posted.message.subject).toBe('Test');
     });
 
@@ -165,7 +165,7 @@ describe('MessageTools', () => {
       });
       const posted = mockRequest.post.mock.calls[0][0];
       expect(posted.message.body.contentType).toBe('html');
-      expect(posted.message.body.content).toContain('Hello<br>');
+      expect(posted.message.body.content).toContain(block('Hello'));
       expect(posted.message.body.content).toContain(SIGNATURE_HTML);
     });
   });
