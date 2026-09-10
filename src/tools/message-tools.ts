@@ -1,8 +1,8 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Message, Attachment } from '@microsoft/microsoft-graph-types';
 import { withSignature, withOutgoingFont, injectReplyTop } from '../signature.js';
-import { readFile } from 'fs/promises';
-import { basename, extname } from 'path';
+import { readFile, writeFile, mkdir, stat } from 'fs/promises';
+import { basename, dirname, extname, join, sep } from 'path';
 
 // Threshold above which a file must be uploaded via a Graph upload session
 // rather than a single POST (3 MiB).
@@ -54,6 +54,30 @@ const PAGINATION_LIMITS = {
   SEARCH: { default: 25, max: 50 },
   ATTACHMENTS: { default: 10, max: 25 },
 } as const;
+
+/**
+ * Resolve where an attachment should be written. If `destination` names an
+ * existing directory (or ends with a path separator), the attachment keeps its
+ * own filename inside it; otherwise `destination` is the full target path.
+ * The attachment's own name is reduced with basename() so a hostile name
+ * cannot escape the destination directory.
+ */
+async function resolveAttachmentDestination(
+  destination: string,
+  attachmentName: string,
+): Promise<string> {
+  const looksLikeDir = destination.endsWith('/') || destination.endsWith(sep);
+  if (!looksLikeDir) {
+    try {
+      const info = await stat(destination);
+      if (!info.isDirectory()) return destination;
+    } catch {
+      // Does not exist yet: treat it as the target file path.
+      return destination;
+    }
+  }
+  return join(destination, basename(attachmentName || 'attachment'));
+}
 
 export class MessageTools {
   constructor(private client: Client) {}
@@ -440,6 +464,48 @@ export class MessageTools {
 
   async getAttachment(messageId: string, attachmentId: string): Promise<Attachment> {
     return await this.client.api(`/me/messages/${messageId}/attachments/${attachmentId}`).get();
+  }
+
+  /**
+   * Download an attachment to a local path. The base64 payload is decoded and
+   * written here rather than being returned to the caller, so attachment bytes
+   * never have to round-trip through a model context.
+   *
+   * Only #microsoft.graph.fileAttachment carries file content; item and
+   * reference attachments are rejected with an explanatory error.
+   */
+  async saveAttachment(
+    messageId: string,
+    attachmentId: string,
+    destination: string,
+  ): Promise<{ path: string; name: string; size: number; contentType: string }> {
+    const attachment = (await this.getAttachment(messageId, attachmentId)) as Attachment & {
+      '@odata.type'?: string;
+      contentBytes?: string;
+    };
+
+    const odataType = attachment['@odata.type'];
+    if (odataType && odataType !== '#microsoft.graph.fileAttachment') {
+      throw new Error(
+        `Attachment "${attachment.name}" is ${odataType}, which carries no file content. ` +
+          'Only #microsoft.graph.fileAttachment can be saved.',
+      );
+    }
+    if (!attachment.contentBytes) {
+      throw new Error(`Attachment "${attachment.name}" returned no contentBytes to write.`);
+    }
+
+    const data = Buffer.from(attachment.contentBytes, 'base64');
+    const target = await resolveAttachmentDestination(destination, attachment.name || '');
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, data);
+
+    return {
+      path: target,
+      name: attachment.name || basename(target),
+      size: data.byteLength,
+      contentType: attachment.contentType || 'application/octet-stream',
+    };
   }
 
   async addAttachment(messageId: string, attachment: Partial<Attachment>): Promise<Attachment> {

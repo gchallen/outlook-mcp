@@ -518,6 +518,27 @@ const tools: Tool[] = [
     },
   },
   {
+    name: 'save_attachment',
+    description:
+      'Download a message attachment to a local path. The file is decoded and written by the server, so its bytes never pass through the conversation - use this instead of list_attachments when the goal is to get a file onto disk. If destination is an existing directory (or ends with a separator), the attachment keeps its own filename inside it; otherwise destination is the full target path, and missing parent directories are created. Only file attachments can be saved (item and reference attachments carry no file content). Get attachmentId from list_attachments.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID' },
+        attachmentId: {
+          type: 'string',
+          description: 'Attachment ID, as returned by list_attachments',
+        },
+        destination: {
+          type: 'string',
+          description:
+            'Absolute path to write to: either the target file path, or an existing directory in which the attachment keeps its own filename',
+        },
+      },
+      required: ['messageId', 'attachmentId', 'destination'],
+    },
+  },
+  {
     name: 'list_child_folders',
     description: 'List child folders of a parent folder with pagination',
     inputSchema: {
@@ -1127,6 +1148,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 await messageTools.addFileAttachment(
                   args.messageId as string,
                   args.filePath as string,
+                ),
+              ),
+            },
+          ],
+        };
+      case 'save_attachment':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await messageTools.saveAttachment(
+                  args.messageId as string,
+                  args.attachmentId as string,
+                  args.destination as string,
                 ),
               ),
             },

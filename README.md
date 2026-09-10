@@ -121,6 +121,8 @@ npx outlook-mcp
 - `copy_message` - Copy a message to another folder
 - `search_messages` - Search for messages (paginated, default: 25, max: 50)
 - `list_attachments` - List message attachments (paginated, default: 10, max: 25)
+- `add_attachment` - Attach a local file to a message or draft (handles >3 MB via upload session)
+- `save_attachment` - Download an attachment to a local path (decoded and written server-side)
 
 #### Folder Tools
 

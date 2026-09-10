@@ -1,6 +1,9 @@
 import { MessageTools } from '../tools/message-tools';
 import { SIGNATURE_HTML, block } from '../signature';
 import { Client } from '@microsoft/microsoft-graph-client';
+import { readFile, mkdtemp, rm, mkdir } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 jest.mock('@microsoft/microsoft-graph-client');
 
@@ -464,6 +467,87 @@ describe('MessageTools', () => {
       await messageTools.deleteAttachment('1', 'a');
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments/a');
       expect(mockRequest.delete).toHaveBeenCalled();
+    });
+  });
+
+  describe('saveAttachment', () => {
+    const CONTENT = 'hello attachment';
+    let dir: string;
+
+    const fileAttachment = (overrides: Record<string, unknown> = {}) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: 'report.pdf',
+      contentType: 'application/pdf',
+      contentBytes: Buffer.from(CONTENT).toString('base64'),
+      ...overrides,
+    });
+
+    beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'outlook-mcp-attach-'));
+    });
+
+    afterEach(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    it('decodes base64 and writes the bytes to an explicit file path', async () => {
+      mockRequest.get.mockResolvedValue(fileAttachment());
+      const target = join(dir, 'saved.pdf');
+
+      const result = await messageTools.saveAttachment('1', 'a', target);
+
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments/a');
+      expect(result).toEqual({
+        path: target,
+        name: 'report.pdf',
+        size: CONTENT.length,
+        contentType: 'application/pdf',
+      });
+      expect(await readFile(target, 'utf8')).toBe(CONTENT);
+    });
+
+    it('keeps the attachment filename when the destination is an existing directory', async () => {
+      mockRequest.get.mockResolvedValue(fileAttachment());
+
+      const result = await messageTools.saveAttachment('1', 'a', dir);
+
+      expect(result.path).toBe(join(dir, 'report.pdf'));
+      expect(await readFile(result.path, 'utf8')).toBe(CONTENT);
+    });
+
+    it('creates missing parent directories', async () => {
+      mockRequest.get.mockResolvedValue(fileAttachment());
+      const target = join(dir, 'nested', 'deeper', 'saved.pdf');
+
+      await messageTools.saveAttachment('1', 'a', target);
+
+      expect(await readFile(target, 'utf8')).toBe(CONTENT);
+    });
+
+    it('strips directory components from a hostile attachment name', async () => {
+      mockRequest.get.mockResolvedValue(fileAttachment({ name: '../../escaped.pdf' }));
+      await mkdir(join(dir, 'sub'), { recursive: true });
+
+      const result = await messageTools.saveAttachment('1', 'a', join(dir, 'sub'));
+
+      expect(result.path).toBe(join(dir, 'sub', 'escaped.pdf'));
+    });
+
+    it('rejects an item attachment, which has no file content', async () => {
+      mockRequest.get.mockResolvedValue({
+        '@odata.type': '#microsoft.graph.itemAttachment',
+        name: 'Forwarded note',
+      });
+
+      await expect(messageTools.saveAttachment('1', 'a', dir)).rejects.toThrow(
+        /itemAttachment.*no file content/s,
+      );
+    });
+
+    it('rejects a file attachment that came back without contentBytes', async () => {
+      mockRequest.get.mockResolvedValue(fileAttachment({ contentBytes: undefined }));
+
+      await expect(messageTools.saveAttachment('1', 'a', dir)).rejects.toThrow(/no contentBytes/);
     });
   });
 });
