@@ -269,6 +269,27 @@ export class MessageTools {
     });
   }
 
+  /**
+   * Create a forward draft without sending it. Returns the draft so it can be
+   * reviewed, edited, or sent later. `html` treats `comment` as pre-formatted
+   * HTML so rich forwards keep their formatting.
+   */
+  async forwardMessageDraft(
+    messageId: string,
+    toRecipients: any[],
+    comment?: string,
+    html?: boolean,
+    message?: Partial<Message>,
+  ): Promise<Message> {
+    return await this.createReplyDraft(
+      messageId,
+      'createForward',
+      comment,
+      { toRecipients, ...message },
+      { raw: html },
+    );
+  }
+
   async copyMessage(messageId: string, destinationId: string): Promise<Message> {
     return await this.client.api(`/me/messages/${messageId}/copy`).post({
       destinationId,

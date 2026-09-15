@@ -312,6 +312,39 @@ const tools: Tool[] = [
     },
   },
   {
+    name: 'forward_message_draft',
+    description:
+      'Create a forward draft without sending it. Returns the draft so it can be reviewed and sent later. The forward always goes out as HTML with the styled signature appended above the quoted original: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to forward' },
+        toRecipients: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              emailAddress: {
+                type: 'object',
+                properties: {
+                  address: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        comment: { type: 'string', description: 'Forward comment' },
+        contentType: {
+          type: 'string',
+          enum: ['text', 'html'],
+          description:
+            'How to treat comment (default text). Use html only for rich formatting such as <ul>/<li> lists; plain prose can stay text — it is converted to HTML with URLs auto-linked either way.',
+        },
+      },
+      required: ['messageId', 'toRecipients'],
+    },
+  },
+  {
     name: 'move_message',
     description: 'Move a message to another folder',
     inputSchema: {
@@ -1004,6 +1037,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           args.comment as string,
         );
         return { content: [{ type: 'text', text: 'Message forwarded successfully' }] };
+      case 'forward_message_draft': {
+        const draft = await messageTools.forwardMessageDraft(
+          args.messageId as string,
+          args.toRecipients as any[],
+          args.comment as string,
+          (args.contentType as string) === 'html',
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(summarizeDraft(draft)) }] };
+      }
       case 'move_message':
         return {
           content: [

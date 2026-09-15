@@ -221,6 +221,30 @@ describe('MessageTools', () => {
       expect(patched.body.content).toContain('geoffreychallen.com');
     });
 
+    it('forwardMessageDraft sets recipients, injects the signature, but does NOT send', async () => {
+      const recipients = [{ emailAddress: { address: 'fwd@example.com' } }];
+      const draft = await messageTools.forwardMessageDraft('m1', recipients, 'FYI');
+
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/m1/createForward');
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/draft1');
+      expect(mockClient.api).not.toHaveBeenCalledWith('/me/messages/draft1/send');
+
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.toRecipients).toEqual(recipients);
+      expect(patched.body.content).toContain('FYI');
+      expect(patched.body.content).toContain('geoffreychallen.com');
+      expect(draft.id).toBe('draft1');
+    });
+
+    it('forwardMessageDraft with html=true preserves raw markup', async () => {
+      const recipients = [{ emailAddress: { address: 'fwd@example.com' } }];
+      await messageTools.forwardMessageDraft('m1', recipients, '<ul><li>one</li></ul>', true);
+
+      const patched = mockRequest.patch.mock.calls[0][0];
+      expect(patched.body.content).toContain('<ul><li>one</li></ul>');
+      expect(patched.body.content).not.toContain('&lt;ul&gt;');
+    });
+
     it('replyAllToMessageDraft creates + injects a draft but does NOT send', async () => {
       const draft = await messageTools.replyAllToMessageDraft('m1', 'Got it');
 

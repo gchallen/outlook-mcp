@@ -117,6 +117,9 @@ npx outlook-mcp
 - `reply_to_message` - Reply to a message
 - `reply_all_to_message` - Reply all to a message
 - `forward_message` - Forward a message
+- `reply_to_message_draft` - Create a reply draft without sending
+- `reply_all_to_message_draft` - Create a reply-all draft without sending
+- `forward_message_draft` - Create a forward draft without sending
 - `move_message` - Move a message to another folder
 - `copy_message` - Copy a message to another folder
 - `search_messages` - Search for messages (paginated, default: 25, max: 50)
