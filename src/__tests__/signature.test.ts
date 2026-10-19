@@ -208,6 +208,9 @@ describe('signature', () => {
 
   describe('normalizeParagraphs', () => {
     const BLOCK = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt';
+    // List elements carry the font themselves; see the list() helper below.
+    const list = (html: string): string =>
+      html.replace(/<(ul|ol|li)>/g, (_m, tag) => `<${tag} style="${BLOCK}">`);
 
     it('turns a bare <p> into a font-bearing <div> with no trailing blank line', () => {
       expect(normalizeParagraphs('<p>Hi</p>')).toBe(`<div style="${BLOCK}">Hi</div>`);
@@ -243,20 +246,42 @@ describe('signature', () => {
       );
     });
 
-    it('does not touch non-paragraph tags', () => {
-      const html = '<ul><li>a</li></ul>';
+    it('stamps the outgoing font on list elements, which cannot rely on inheritance', () => {
+      expect(normalizeParagraphs('<ul><li>a</li></ul>')).toBe(list('<ul><li>a</li></ul>'));
+      expect(normalizeParagraphs('<ol><li>a</li></ol>')).toBe(list('<ol><li>a</li></ol>'));
+    });
+
+    it('keeps an author style on a list but adds the missing font declarations', () => {
+      expect(normalizeParagraphs('<ul style="margin-left:2em"><li>a</li></ul>')).toBe(
+        `<ul style="margin-left:2em; ${BLOCK}"><li style="${BLOCK}">a</li></ul>`,
+      );
+    });
+
+    it('respects an author font on a list', () => {
+      expect(normalizeParagraphs('<ul><li style="font-family:Georgia">a</li></ul>')).toBe(
+        `<ul style="${BLOCK}"><li style="font-family:Georgia; font-size:11pt">a</li></ul>`,
+      );
+    });
+
+    it('is idempotent over an already-stamped list', () => {
+      const once = normalizeParagraphs('<ul><li>a</li></ul>');
+      expect(normalizeParagraphs(once)).toBe(once);
+    });
+
+    it('does not touch other non-paragraph tags', () => {
+      const html = '<blockquote>a</blockquote>';
       expect(normalizeParagraphs(html)).toBe(html);
     });
 
     it('gives a list the same blank line after it that a paragraph gets', () => {
       expect(normalizeParagraphs('<p>a</p><ul><li>b</li></ul><p>c</p>')).toBe(
-        `${block('a')}${BLANK_LINE}<ul><li>b</li></ul>${BLANK_LINE}${block('c')}`,
+        `${block('a')}${BLANK_LINE}${list('<ul><li>b</li></ul>')}${BLANK_LINE}${block('c')}`,
       );
     });
 
     it('does not insert a blank line inside a nested list', () => {
       const html = '<ul><li>a<ul><li>b</li></ul></li></ul>';
-      expect(normalizeParagraphs(html)).toBe(html);
+      expect(normalizeParagraphs(html)).toBe(list(html));
     });
 
     it('removes the blank line before an existing signature, which carries its own', () => {
@@ -320,6 +345,8 @@ describe('signature', () => {
 });
 
 describe('withOutgoingFont', () => {
+  const BLOCK = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt';
+
   it('wraps a bare HTML body in the outgoing font', () => {
     const out = withOutgoingFont({ contentType: 'html', content: '<p>Hi</p>' });
     expect(out?.content).toContain('font-family:Arial,Helvetica,sans-serif');
@@ -349,6 +376,57 @@ describe('withOutgoingFont', () => {
     const out = withOutgoingFont({ contentType: 'html', content });
     expect(out?.content).toMatch(/<body dir="ltr"><div style="font-family:Arial/);
     expect(out?.content).toMatch(/<\/div><\/body>/);
+  });
+
+  // An OWA-rewritten body: the wrapper is gone and OWA has stamped the font on
+  // each block <div> it owns, leaving everything else bare. A font-family is
+  // present, but only where OWA put it.
+  const owaBody = (inner: string): string =>
+    '<html><head></head><body dir="ltr">' +
+    `<div class="elementToProof" style="${BLOCK}">Prose.</div>${inner}</body></html>`;
+
+  it('wraps an OWA-rewritten body, whose per-block fonts used to suppress the wrapper', () => {
+    const out = withOutgoingFont({
+      contentType: 'html',
+      content: owaBody('<table><tr><td>cell</td></tr></table>'),
+    });
+    expect(out?.content).toContain(
+      `<body dir="ltr"><div style="${BLOCK}"><div class="elementToProof"`,
+    );
+    expect(out?.content).toMatch(/<\/table><\/div><\/body>/);
+  });
+
+  it('covers a bare <blockquote> beside stamped blocks', () => {
+    const out = withOutgoingFont({
+      contentType: 'html',
+      content: owaBody('<blockquote>quoted</blockquote>'),
+    });
+    // The blockquote carries no font of its own, so it must sit inside the wrapper.
+    const wrapperAt = out!.content!.indexOf(`<div style="${BLOCK}">`);
+    expect(wrapperAt).toBeGreaterThan(-1);
+    expect(wrapperAt).toBeLessThan(out!.content!.indexOf('<blockquote>'));
+  });
+
+  it('does not nest a second wrapper on a body it already wrapped', () => {
+    const once = withOutgoingFont({ contentType: 'html', content: '<p>Hi</p>' });
+    const twice = withOutgoingFont(once);
+    expect(twice?.content).toBe(once?.content);
+  });
+
+  it('does not nest a wrapper around an OWA body it already wrapped', () => {
+    const once = withOutgoingFont({ contentType: 'html', content: owaBody('<ul><li>a</li></ul>') });
+    const twice = withOutgoingFont(once);
+    expect(twice?.content).toBe(once?.content);
+  });
+
+  it('keeps the blank line under a list stable across repeated passes', () => {
+    const once = withOutgoingFont({
+      contentType: 'html',
+      content: '<p>a</p><ul><li>b</li></ul><p>c</p>',
+    });
+    const twice = withOutgoingFont(once);
+    expect(twice?.content).toBe(once?.content);
+    expect(once?.content!.match(/<br>/g)).toHaveLength(2);
   });
 
   it('converts a plain-text replacement body to HTML with links', () => {

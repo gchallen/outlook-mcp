@@ -8,8 +8,8 @@ import { join } from 'path';
 jest.mock('@microsoft/microsoft-graph-client');
 
 // Mirror of the font wrapper withSignature() applies to HTML bodies.
-const wrappedHtmlBody = (content: string): string =>
-  `<div style="font-family:Arial,Helvetica,sans-serif; font-size:11pt">${content}</div>`;
+const FONT = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt';
+const wrappedHtmlBody = (content: string): string => `<div style="${FONT}">${content}</div>`;
 
 describe('MessageTools', () => {
   let messageTools: MessageTools;
@@ -241,7 +241,9 @@ describe('MessageTools', () => {
       await messageTools.forwardMessageDraft('m1', recipients, '<ul><li>one</li></ul>', true);
 
       const patched = mockRequest.patch.mock.calls[0][0];
-      expect(patched.body.content).toContain('<ul><li>one</li></ul>');
+      expect(patched.body.content).toContain(
+        `<ul style="${FONT}"><li style="${FONT}">one</li></ul>`,
+      );
       expect(patched.body.content).not.toContain('&lt;ul&gt;');
     });
 
@@ -264,7 +266,9 @@ describe('MessageTools', () => {
       await messageTools.replyToMessageDraft('m1', '<ul><li>one</li></ul>', true);
 
       const patched = mockRequest.patch.mock.calls[0][0];
-      expect(patched.body.content).toContain('<ul><li>one</li></ul>');
+      expect(patched.body.content).toContain(
+        `<ul style="${FONT}"><li style="${FONT}">one</li></ul>`,
+      );
       expect(patched.body.content).not.toContain('&lt;ul&gt;');
       expect(mockClient.api).not.toHaveBeenCalledWith('/me/messages/draft1/send');
     });

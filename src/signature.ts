@@ -165,10 +165,43 @@ function stripPlainSignature(text: string): { text: string; stripped: boolean } 
 }
 
 /**
+ * Merge the outgoing font into one element's attributes, leaving an
+ * author-specified font-family or font-size alone. `dropMargins` additionally
+ * strips margin declarations, for the <p> rewrite that spaces blocks with a
+ * blank line instead. Idempotent: a second pass finds the font already there.
+ */
+function withFontAttrs(attrs: string, opts?: { dropMargins?: boolean }): string {
+  const styleMatch = attrs.match(/\bstyle\s*=\s*("|')([\s\S]*?)\1/i);
+  if (!styleMatch) return `${attrs} style="${BLOCK_STYLE}"`;
+  const decls = styleMatch[2]
+    .split(';')
+    .map((d) => d.trim())
+    .filter((d) => d && !(opts?.dropMargins && /^margin/i.test(d)));
+  if (!decls.some((d) => /^font-family/i.test(d))) decls.push(`font-family:${FONT_STACK}`);
+  if (!decls.some((d) => /^font-size/i.test(d))) decls.push(`font-size:${FONT_SIZE}`);
+  return attrs.replace(styleMatch[0], `style="${decls.join('; ')}"`);
+}
+
+/**
  * Rewrite authored <p> paragraphs into OWA-native blocks: each <p> becomes a
  * font-bearing <div> (see `block`), and the gap between paragraphs becomes a
  * blank-line block rather than a margin. Lists get the same blank line after
  * them that a paragraph does, unless they are nested inside another list item.
+ *
+ * <ul>/<ol>/<li> carry the font on the element itself rather than relying on
+ * inheritance from the body wrapper, which is not always there to inherit
+ * from: withOutgoingFont used to skip the wrapper for any body declaring a
+ * font-family anywhere (every OWA-rewritten body does), leaving bare bullets
+ * in OWA's base UI font beside Arial prose. Stamping the element covers that
+ * path and anything else that loses the wrapper.
+ *
+ * It does NOT survive an edit in the OWA composer. OWA strips font-family and
+ * font-size off <ul>/<li> on save — measured, not assumed: a draft stamped
+ * here came back with the declarations deleted from the list elements while
+ * identical ones on OWA's own block <div>s were kept. So the guarantee is at
+ * send time and on the update_message path; a draft revised in the web
+ * composer needs re-stamping before it goes out. Nothing server-side fixes
+ * that, since OWA is normalizing its own stored HTML.
  *
  * Why not keep <p> with margins? Graph's reply skeleton carries
  * `<style>p{margin-top:0;margin-bottom:0}</style>`, so bare <p>s collapse into
@@ -185,20 +218,22 @@ function stripPlainSignature(text: string): { text: string; stripped: boolean } 
  * own.
  */
 export function normalizeParagraphs(html: string): string {
-  let out = html.replace(/<p(\s[^>]*)?>/gi, (match, attrs?: string) => {
-    const a = attrs ?? '';
-    const styleMatch = a.match(/\bstyle\s*=\s*("|')([\s\S]*?)\1/i);
-    if (!styleMatch) return `<div${a} style="${BLOCK_STYLE}">`;
-    const decls = styleMatch[2]
-      .split(';')
-      .map((d) => d.trim())
-      .filter((d) => d && !/^margin/i.test(d));
-    if (!decls.some((d) => /^font-family/i.test(d))) decls.push(`font-family:${FONT_STACK}`);
-    if (!decls.some((d) => /^font-size/i.test(d))) decls.push(`font-size:${FONT_SIZE}`);
-    return `<div${a.replace(styleMatch[0], `style="${decls.join('; ')}"`)}>`;
-  });
+  let out = html.replace(
+    /<p(\s[^>]*)?>/gi,
+    (_match, attrs?: string) => `<div${withFontAttrs(attrs ?? '', { dropMargins: true })}>`,
+  );
   out = out.replace(/<\/p>/gi, `</div>${BLANK_LINE}`);
-  out = out.replace(/<\/(ul|ol)>(?!\s*<\/(li|ul|ol)>)/gi, (m) => m + BLANK_LINE);
+  out = out.replace(
+    /<(ul|ol|li)(\s[^>]*)?>/gi,
+    (_match, tag: string, attrs?: string) => `<${tag}${withFontAttrs(attrs ?? '')}>`,
+  );
+  // The negative lookahead also covers a blank-line block that is already
+  // there: without it every PATCH through withOutgoingFont added one more
+  // blank line under each list, so a draft revised twice grew a widening gap.
+  out = out.replace(
+    /<\/(ul|ol)>(?!\s*(?:<\/(?:li|ul|ol)>|<div[^>]*>\s*<br\s*\/?>\s*<\/div>))/gi,
+    (m) => m + BLANK_LINE,
+  );
   out = out.split(BLANK_LINE + SIGNATURE_OPEN).join(SIGNATURE_OPEN);
   while (out.endsWith(BLANK_LINE)) out = out.slice(0, -BLANK_LINE.length);
   return out;
@@ -244,6 +279,27 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
 }
 
 /**
+ * True when `html` is a single element that declares a font-family and
+ * encloses the whole fragment, so that font already applies throughout. A
+ * font-bearing element that covers only part of the fragment (one block among
+ * siblings, as in an OWA-rewritten body) does not count.
+ */
+function isFontBearingRoot(html: string): boolean {
+  const trimmed = html.trim();
+  const open = trimmed.match(/^<([a-z][\w-]*)(?:\s[^>]*)?>/i);
+  if (!open || !/font-family/i.test(open[0])) return false;
+  const tags = new RegExp(`<${open[1]}(?:\\s[^>]*)?>|</${open[1]}\\s*>`, 'gi');
+  let depth = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tags.exec(trimmed)) !== null) {
+    depth += match[0].startsWith('</') ? -1 : 1;
+    // The root closes here; it is the whole fragment only if nothing follows.
+    if (depth === 0) return tags.lastIndex === trimmed.length;
+  }
+  return false;
+}
+
+/**
  * Stamp the outgoing font onto an HTML body and normalize its paragraphs,
  * without touching the signature.
  *
@@ -254,8 +310,9 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
  * to revise a draft, and it should not silently produce different typography
  * from the message that draft started as.
  *
- * Idempotent in the ways that matter. A body that already declares a
- * font-family is left to its author. A full <html>…<body> document gets the
+ * Idempotent: a body that is already one font-bearing root block — this
+ * function's own wrapper, or an author's — is returned untouched rather than
+ * nested inside a second wrapper. A full <html>…<body> document gets the
  * wrapper inside <body> rather than around the document, which would be
  * malformed.
  *
@@ -280,24 +337,35 @@ export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
 
   const content = normalizeParagraphs(linkifyHtml(body.content ?? ''));
 
-  // The author set their own font. Respect it.
-  if (/font-family/i.test(content)) return { contentType: 'html', content };
+  // Wrap the body's own content: for a full <html> document that means inside
+  // <body>, not around the document, which would be malformed.
+  const bodyOpen = content.match(/<body[^>]*>/i);
+  const hasBody = bodyOpen !== null && bodyOpen.index !== undefined;
+  const start = hasBody ? bodyOpen!.index! + bodyOpen![0].length : 0;
+  const closeAt = content.search(/<\/body>/i);
+  const end = hasBody && closeAt > -1 ? closeAt : content.length;
+  const inner = content.slice(start, end);
+
+  // Already covered: nothing to wrap, or the content is a single font-bearing
+  // root that encloses everything — our own wrapper from an earlier pass, or
+  // an author's deliberate choice. Wrapping either again would nest one more
+  // wrapper on every PATCH.
+  //
+  // This used to skip the wrapper whenever a font-family appeared ANYWHERE in
+  // the body. That read as "respect the author", but it fired on every body
+  // OWA had rewritten, because OWA stamps a font on each block <div> it owns.
+  // Elements carrying no font of their own — <table>, <blockquote>, a bare
+  // <div> — were then left inheriting OWA's base UI font, visibly mismatched
+  // against the stamped blocks beside them. Wrapping those bodies is safe: an
+  // inherited font loses to any inner declaration, so blocks that do carry
+  // their own font are unaffected.
+  if (!inner.trim() || isFontBearingRoot(inner)) return { contentType: 'html', content };
 
   const open = `<div style="${BODY_STYLE}">`;
-
-  const bodyOpen = content.match(/<body[^>]*>/i);
-  if (bodyOpen && bodyOpen.index !== undefined) {
-    const start = bodyOpen.index + bodyOpen[0].length;
-    const closeAt = content.search(/<\/body>/i);
-    const end = closeAt > -1 ? closeAt : content.length;
-    return {
-      contentType: 'html',
-      content:
-        content.slice(0, start) + open + content.slice(start, end) + '</div>' + content.slice(end),
-    };
-  }
-
-  return { contentType: 'html', content: open + content + '</div>' };
+  return {
+    contentType: 'html',
+    content: content.slice(0, start) + open + inner + '</div>' + content.slice(end),
+  };
 }
 
 /**
