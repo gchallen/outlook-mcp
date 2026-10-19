@@ -11,6 +11,7 @@ import {
   linkifyEscapedText,
   linkifyHtml,
   textToHtml,
+  textToBlocks,
 } from '../signature.js';
 
 describe('signature', () => {
@@ -481,6 +482,52 @@ describe('linkify', () => {
   it('textToHtml escapes, links, and converts newlines', () => {
     expect(textToHtml('a & b\nhttps://x.com')).toBe(
       'a &amp; b<br><a href="https://x.com" style="color:rgb(12,100,192)">https://x.com</a>',
+    );
+  });
+});
+
+describe('textToBlocks lists', () => {
+  const F = ' style="font-family:Arial,Helvetica,sans-serif; font-size:11pt"';
+  const li = (s: string) => `<li${F}>${s}</li>`;
+
+  it('turns consecutive "- " lines into one <ul> between paragraphs', () => {
+    expect(textToBlocks('Intro:\n- one\n- two\n\nAfter.')).toBe(
+      block('Intro:') + `<ul${F}>${li('one')}${li('two')}</ul>` + BLANK_LINE + block('After.'),
+    );
+  });
+
+  it('accepts "*" and "•" bullets', () => {
+    expect(textToBlocks('* a\n• b')).toBe(`<ul${F}>${li('a')}${li('b')}</ul>`);
+  });
+
+  it('turns numbered lines into an <ol>, keeping a start other than 1', () => {
+    expect(textToBlocks('1. first\n2) second')).toBe(`<ol${F}>${li('first')}${li('second')}</ol>`);
+    expect(textToBlocks('3. third\n4. fourth')).toBe(
+      `<ol${F} start="3">${li('third')}${li('fourth')}</ol>`,
+    );
+  });
+
+  it('starts a new list when the marker type changes', () => {
+    expect(textToBlocks('1. step\n- note')).toBe(
+      `<ol${F}>${li('step')}</ol><ul${F}>${li('note')}</ul>`,
+    );
+  });
+
+  it('keeps blank-line-separated numbered paragraphs as separate lists in order', () => {
+    expect(textToBlocks('1. a\n\n2. b')).toBe(
+      `<ol${F}>${li('a')}</ol>` + BLANK_LINE + `<ol${F} start="2">${li('b')}</ol>`,
+    );
+  });
+
+  it('escapes and links inside items', () => {
+    expect(textToBlocks('- see <x> https://x.com')).toBe(
+      `<ul${F}>${li('see &lt;x&gt; <a href="https://x.com" style="color:rgb(12,100,192)">https://x.com</a>')}</ul>`,
+    );
+  });
+
+  it('leaves prose that only looks like a marker alone', () => {
+    expect(textToBlocks('-5 degrees\n3.14 is pi\n2026. A year')).toBe(
+      block('-5 degrees') + block('3.14 is pi') + block('2026. A year'),
     );
   });
 });

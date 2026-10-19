@@ -113,7 +113,7 @@ const tools: Tool[] = [
   {
     name: 'create_message',
     description:
-      'Create a draft message. Every body goes out as HTML: a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved) and the styled HTML signature is appended either way, so plain prose can simply be sent as "text". For bulleted or numbered lists (or any rich formatting), set body.contentType to "html" and use <ul><li>...</li></ul> or <ol><li>...</li></ol> with <p> for paragraphs — markdown-style "-" bullets do NOT render. Bare URLs in HTML bodies are also auto-hyperlinked (existing <a> tags are left alone). Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one). Use Title Case for the subject line.',
+      'Create a draft message. Every body goes out as HTML: a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) and the styled HTML signature is appended either way, so plain prose can simply be sent as "text". Lines starting "- " or "1. " in a "text" body become real bulleted or numbered lists. For other rich formatting, set body.contentType to "html" and use <p> for paragraphs. Bare URLs in HTML bodies are also auto-hyperlinked (existing <a> tags are left alone). Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one). Use Title Case for the subject line.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -125,7 +125,7 @@ const tools: Tool[] = [
             content: {
               type: 'string',
               description:
-                'Body content. For lists/formatting use contentType "html" with <ul>/<li> or <ol>/<li>; markdown-style "-" bullets do NOT render in a "text" body.',
+                'Body content. In a "text" body, lines starting "- " or "1. " become real lists; use contentType "html" for other formatting.',
             },
           },
         },
@@ -153,7 +153,7 @@ const tools: Tool[] = [
   {
     name: 'update_message',
     description:
-      'Update message properties (PATCH). Replacement bodies always go out as HTML: a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved), and an HTML body gets the outgoing font, paragraph spacing, and URL auto-linking stamped on it — authored <p>/<ul>/<li> markup needs no inline font styling, and a body that already declares its own font-family is left alone. The signature is NOT added — a PATCH usually replaces the whole body, so include the signature yourself (a typed-out plain signature is upgraded to the styled hyperlinked one). Use contentType "html" with <ul>/<li> for lists. Note: editing a draft can rotate its message ID, so re-fetch the draft (list/get) before a follow-up update.',
+      'Update message properties (PATCH). Replacement bodies always go out as HTML: a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists), and an HTML body gets the outgoing font, paragraph spacing, and URL auto-linking stamped on it — authored <p>/<ul>/<li> markup needs no inline font styling, and a body that already declares its own font-family is left alone. The signature is NOT added — a PATCH usually replaces the whole body, so include the signature yourself (a typed-out plain signature is upgraded to the styled hyperlinked one). In a "text" body, lines starting "- " or "1. " become real lists. Note: editing a draft can rotate its message ID, so re-fetch the draft (list/get) before a follow-up update.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -188,7 +188,7 @@ const tools: Tool[] = [
   {
     name: 'send_mail',
     description:
-      'Send a new email directly. Same formatting rules as create_message: every body goes out as HTML — a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved) and the styled signature is appended either way. For bulleted/numbered lists set body.contentType to "html" and use <ul>/<li> or <ol>/<li> — markdown-style "-" bullets do NOT render. Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one). Use Title Case for the subject line.',
+      'Send a new email directly. Same formatting rules as create_message: every body goes out as HTML — a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) and the styled signature is appended either way. Lines starting "- " or "1. " in a "text" body become real lists. Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one). Use Title Case for the subject line.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -223,7 +223,7 @@ const tools: Tool[] = [
   {
     name: 'reply_to_message',
     description:
-      'Reply to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved) with the styled signature appended — do not write your own signature.',
+      'Reply to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with the styled signature appended — do not write your own signature.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -236,7 +236,7 @@ const tools: Tool[] = [
   {
     name: 'reply_all_to_message',
     description:
-      'Reply all to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved) with the styled signature appended — do not write your own signature.',
+      'Reply all to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with the styled signature appended — do not write your own signature.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -249,7 +249,7 @@ const tools: Tool[] = [
   {
     name: 'reply_to_message_draft',
     description:
-      'Create a reply draft (to sender only) without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML with the styled signature appended: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+      'Create a reply draft (to sender only) without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML with the styled signature appended: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -268,7 +268,7 @@ const tools: Tool[] = [
   {
     name: 'reply_all_to_message_draft',
     description:
-      'Create a reply-all draft without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML with the styled signature appended: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+      'Create a reply-all draft without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML with the styled signature appended: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -287,7 +287,7 @@ const tools: Tool[] = [
   {
     name: 'forward_message',
     description:
-      'Forward a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved) with the styled signature appended — do not write your own signature.',
+      'Forward a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with the styled signature appended — do not write your own signature.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -314,7 +314,7 @@ const tools: Tool[] = [
   {
     name: 'forward_message_draft',
     description:
-      'Create a forward draft without sending it. Returns the draft so it can be reviewed and sent later. The forward always goes out as HTML with the styled signature appended above the quoted original: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+      'Create a forward draft without sending it. Returns the draft so it can be reviewed and sent later. The forward always goes out as HTML with the styled signature appended above the quoted original: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
     inputSchema: {
       type: 'object',
       properties: {

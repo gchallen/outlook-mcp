@@ -136,18 +136,56 @@ export function textToHtml(text: string): string {
   return linkifyEscapedText(escapeHtml(text)).replace(/\n/g, '<br>');
 }
 
+// A plain-text list item: "- ", "* " or "• " for bullets, "1. " or "1) " for
+// numbers. The space after the marker is required, so "-5 degrees" and
+// "3.14" stay prose, and numbers stop at two digits so a line opening with a
+// year ("2026. A year of ...") does too.
+const BULLET_ITEM = /^\s*[-*•]\s+(.*)$/;
+const NUMBERED_ITEM = /^\s*(\d{1,2})[.)]\s+(.*)$/;
+
 /**
  * Render authored plain text the way OWA renders typed text: one block per
- * line, with blank lines as empty blocks. Trailing blank lines are dropped so
- * the signature's own leading blank line supplies the single gap above it.
+ * line, with blank lines as empty blocks. Consecutive bullet lines become a
+ * <ul> and consecutive numbered lines an <ol> (starting at the first number),
+ * with the font stamped on each list element as normalizeParagraphs does for
+ * authored HTML. Callers write lists in plain text far more often than they
+ * remember to switch to HTML, and a literal "- " reads as a stray hyphen.
+ * Trailing blank lines are dropped so the signature's own leading blank line
+ * supplies the single gap above it.
  */
 export function textToBlocks(text: string): string {
   const trimmed = text.replace(/\r/g, '').replace(/\s+$/, '');
   if (!trimmed) return '';
-  return trimmed
-    .split('\n')
-    .map((line) => block(linkifyEscapedText(escapeHtml(line))))
-    .join('');
+  const inline = (s: string) => linkifyEscapedText(escapeHtml(s));
+  const style = withFontAttrs('');
+  const out: string[] = [];
+  // Asserted rather than annotated: flush() resets it inside a closure, which
+  // control-flow narrowing cannot see, so an annotated `= null` stays `never`.
+  let list = null as { tag: 'ul' | 'ol'; items: string[]; start: number } | null;
+  const flush = () => {
+    if (!list) return;
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    const items = list.items.map((item) => `<li${style}>${item}</li>`).join('');
+    out.push(`<${list.tag}${style}${start}>${items}</${list.tag}>`);
+    list = null;
+  };
+  for (const line of trimmed.split('\n')) {
+    const bullet = line.match(BULLET_ITEM);
+    const numbered = bullet ? null : line.match(NUMBERED_ITEM);
+    const tag = bullet ? 'ul' : numbered ? 'ol' : null;
+    if (!tag) {
+      flush();
+      out.push(block(inline(line)));
+      continue;
+    }
+    if (list?.tag !== tag) {
+      flush();
+      list = { tag, items: [], start: numbered ? Number(numbered[1]) : 1 };
+    }
+    list!.items.push(inline(bullet ? bullet[1] : numbered![2]));
+  }
+  flush();
+  return out.join('');
 }
 
 /**
