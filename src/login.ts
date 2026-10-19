@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { GraphAuthProvider, DEFAULT_SCOPES } from './auth.js';
+import { GraphAuthProvider, DEFAULT_SCOPES, TEAMS_SCOPES } from './auth.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
@@ -15,7 +15,10 @@ async function main() {
   const auth = new GraphAuthProvider({
     clientId,
     tenantId: process.env.AZURE_TENANT_ID,
-    scopes: process.env.GRAPH_SCOPES?.split(',') ?? DEFAULT_SCOPES,
+    scopes: [
+      ...(process.env.GRAPH_SCOPES?.split(',') ?? [...DEFAULT_SCOPES, ...TEAMS_SCOPES]),
+      ...(process.env.EXTRA_GRAPH_SCOPES?.split(',') ?? []),
+    ],
     cachePath: process.env.OUTLOOK_TOKEN_CACHE,
   });
 

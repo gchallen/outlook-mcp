@@ -18,6 +18,19 @@ export const DEFAULT_SCOPES = [
   'User.Read',
 ];
 
+// Teams scopes, requested at login alongside DEFAULT_SCOPES but not on silent
+// refresh: once consented they ride along in every Graph token, and if the
+// tenant refuses them the mail tools keep working. All are user-consentable;
+// reading channel posts additionally needs ChannelMessage.Read.All, which
+// requires admin consent, so it is opt-in via EXTRA_GRAPH_SCOPES.
+export const TEAMS_SCOPES = [
+  'Chat.ReadWrite',
+  'ChatMessage.Send',
+  'Team.ReadBasic.All',
+  'Channel.ReadBasic.All',
+  'ChannelMessage.Send',
+];
+
 export interface AuthConfig {
   clientId: string;
   tenantId?: string;

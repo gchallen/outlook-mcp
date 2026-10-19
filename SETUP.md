@@ -40,7 +40,11 @@ Notes:
   the token cache produced in the next step, which stays on this machine and is
   gitignored.
 - `GRAPH_SCOPES` is optional; it defaults to
-  `Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,User.Read`.
+  `Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,People.Read,User.Read`,
+  plus the Teams scopes
+  `Chat.ReadWrite,ChatMessage.Send,Team.ReadBasic.All,Channel.ReadBasic.All,ChannelMessage.Send`
+  at login. `EXTRA_GRAPH_SCOPES` appends more at login, e.g.
+  `ChannelMessage.Read.All` for reading channel posts (needs admin consent).
 - The Azure app must have **"Allow public client flows" = Yes** and the above
   delegated Graph permissions. (The existing registration already does. If you
   are setting up a brand-new app instead, see `INSTRUCTIONS.md`.)

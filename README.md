@@ -7,6 +7,7 @@ A Model Context Protocol (MCP) server that provides access to Microsoft Outlook 
 - **Message Management**: List, read, create, update, delete, send, reply, and forward messages
 - **Calendar**: List calendars, list/view events, create, update, delete events, and RSVP to invites
 - **Contacts**: List, search, read, create, update, and delete contacts
+- **Teams**: Read, send, and search Teams chats; list teams and channels; post and reply in channels
 - **Folder Operations**: Create, manage, and organize mail folders
 - **Search Functionality**: Search through messages with advanced filtering
 - **Attachment Support**: List, add, and manage email attachments
@@ -164,6 +165,22 @@ npx outlook-mcp
 - `update_contact` - Update a contact's properties
 - `delete_contact` - Delete a contact
 
+#### Teams Tools
+
+- `list_teams_chats` - List chats, most recent first, with an unread flag (paginated, default: 20, max: 50)
+- `get_teams_chat_messages` - Read recent messages in a chat (paginated, default: 20, max: 50)
+- `send_teams_chat_message` - Send a message to a chat
+- `create_teams_chat` - Start (or find) a one-on-one or group chat by email address
+- `mark_teams_chat_read` - Mark a chat as read
+- `react_to_teams_chat_message` - React to a chat message
+- `search_teams_messages` - Full-text search across Teams messages (max: 25)
+- `list_joined_teams` - List the teams you belong to
+- `list_teams_channels` - List a team's channels
+- `list_teams_channel_messages` - List top-level channel posts (needs `ChannelMessage.Read.All`)
+- `get_teams_channel_message_replies` - Read a channel thread (needs `ChannelMessage.Read.All`)
+- `send_teams_channel_message` - Post a new channel message
+- `reply_to_teams_channel_message` - Reply in a channel thread
+
 ## Examples
 
 ### List Recent Messages
@@ -315,6 +332,15 @@ The following delegated Microsoft Graph permissions are used:
 - `Calendars.ReadWrite` - Read and write calendar events
 - `Contacts.ReadWrite` - Read and write contacts
 - `User.Read` - Read the signed-in user's profile
+- `People.Read` - Search relevant people and the directory
+- `Chat.ReadWrite`, `ChatMessage.Send` - Read, send, and mark Teams chats read
+- `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Send` - List teams and channels and post to them
+- `ChannelMessage.Read.All` (optional, admin consent) - Read channel posts; add it with
+  `EXTRA_GRAPH_SCOPES=ChannelMessage.Read.All npm run login`
+
+The Teams scopes are requested only at login. If the tenant refuses them, the
+mail, calendar, and contacts tools keep working and the Teams tools return a
+permission error.
 - `offline_access` - Obtain refresh tokens for silent re-authentication
 
 ## Security

@@ -13,6 +13,7 @@ import { RuleTools } from './tools/rule-tools.js';
 import { CalendarTools } from './tools/calendar-tools.js';
 import { ContactsTools } from './tools/contacts-tools.js';
 import { PeopleTools } from './tools/people-tools.js';
+import { TeamsTools } from './tools/teams-tools.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
@@ -39,6 +40,7 @@ let ruleTools: RuleTools;
 let calendarTools: CalendarTools;
 let contactsTools: ContactsTools;
 let peopleTools: PeopleTools;
+let teamsTools: TeamsTools;
 
 // Trim a draft message down to the fields worth surfacing after creating a
 // reply draft, avoiding a dump of the full quoted-thread HTML body.
@@ -69,6 +71,7 @@ async function initializeGraphClient() {
   calendarTools = new CalendarTools(client);
   contactsTools = new ContactsTools(client);
   peopleTools = new PeopleTools(client);
+  teamsTools = new TeamsTools(client);
 }
 
 const tools: Tool[] = [
@@ -942,6 +945,206 @@ const tools: Tool[] = [
       required: ['contactId'],
     },
   },
+
+  // Teams Tools
+  {
+    name: 'list_teams_chats',
+    description:
+      'List Microsoft Teams chats (one-on-one, group, and meeting chats), most recently active first, with members, a last-message preview, and an "unread" flag. Use unreadOnly to see just the chats waiting on a reply. Read a chat with get_teams_chat_messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        top: {
+          type: 'number',
+          description: 'Number of chats to return (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
+        unreadOnly: {
+          type: 'boolean',
+          description: 'Only return chats whose last message from someone else is unread',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_teams_chat_messages',
+    description:
+      'Get the most recent messages in a Teams chat, returned oldest first with HTML flattened to text. System events (members added, etc.) are omitted.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chatId: { type: 'string', description: 'Chat ID (from list_teams_chats)' },
+        top: {
+          type: 'number',
+          description: 'Number of recent messages to return (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+      required: ['chatId'],
+    },
+  },
+  {
+    name: 'send_teams_chat_message',
+    description:
+      'Send a message to a Teams chat immediately. A "text" message is escaped with line breaks kept and bare URLs hyperlinked; use "html" for richer formatting. Teams chats have no threaded replies, so this is also how to respond in a chat. No signature is added.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chatId: { type: 'string', description: 'Chat ID' },
+        content: { type: 'string', description: 'Message content' },
+        contentType: { type: 'string', enum: ['text', 'html'], description: 'Default: text' },
+      },
+      required: ['chatId', 'content'],
+    },
+  },
+  {
+    name: 'create_teams_chat',
+    description:
+      'Start a Teams chat with one or more people by email address. A single address gives a one-on-one chat (the existing chat is returned if there already is one); several give a new group chat. Then send with send_teams_chat_message.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        emails: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Email addresses (UPNs) of the other participants',
+        },
+        topic: { type: 'string', description: 'Optional group chat name' },
+      },
+      required: ['emails'],
+    },
+  },
+  {
+    name: 'mark_teams_chat_read',
+    description: 'Mark a Teams chat as read.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chatId: { type: 'string', description: 'Chat ID' },
+      },
+      required: ['chatId'],
+    },
+  },
+  {
+    name: 'react_to_teams_chat_message',
+    description: 'Add a reaction to a Teams chat message, e.g. "👍", "❤️", "😆", "😮", "😢", "😡".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chatId: { type: 'string', description: 'Chat ID' },
+        messageId: { type: 'string', description: 'Message ID' },
+        reactionType: { type: 'string', description: 'Reaction emoji' },
+      },
+      required: ['chatId', 'messageId', 'reactionType'],
+    },
+  },
+  {
+    name: 'list_joined_teams',
+    description: 'List the Teams the user is a member of.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_teams_channels',
+    description: 'List the channels in a team.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        teamId: { type: 'string', description: 'Team ID (from list_joined_teams)' },
+      },
+      required: ['teamId'],
+    },
+  },
+  {
+    name: 'list_teams_channel_messages',
+    description:
+      'List recent top-level posts in a Teams channel, newest first. Read a thread with get_teams_channel_message_replies. Needs the ChannelMessage.Read.All permission, which requires tenant admin consent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        teamId: { type: 'string', description: 'Team ID' },
+        channelId: { type: 'string', description: 'Channel ID' },
+        top: {
+          type: 'number',
+          description: 'Number of posts to return (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+      required: ['teamId', 'channelId'],
+    },
+  },
+  {
+    name: 'get_teams_channel_message_replies',
+    description:
+      'Get the replies in a Teams channel thread, oldest first. Needs ChannelMessage.Read.All (admin consent).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        teamId: { type: 'string', description: 'Team ID' },
+        channelId: { type: 'string', description: 'Channel ID' },
+        messageId: { type: 'string', description: 'ID of the top-level post' },
+        top: {
+          type: 'number',
+          description: 'Number of replies to return (default: 20, max: 50)',
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+      required: ['teamId', 'channelId', 'messageId'],
+    },
+  },
+  {
+    name: 'send_teams_channel_message',
+    description:
+      'Post a new top-level message in a Teams channel immediately. Same formatting rules as send_teams_chat_message.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        teamId: { type: 'string', description: 'Team ID' },
+        channelId: { type: 'string', description: 'Channel ID' },
+        content: { type: 'string', description: 'Message content' },
+        contentType: { type: 'string', enum: ['text', 'html'], description: 'Default: text' },
+        subject: { type: 'string', description: 'Optional post subject' },
+      },
+      required: ['teamId', 'channelId', 'content'],
+    },
+  },
+  {
+    name: 'reply_to_teams_channel_message',
+    description:
+      'Reply in a Teams channel thread immediately. Same formatting rules as send_teams_chat_message.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        teamId: { type: 'string', description: 'Team ID' },
+        channelId: { type: 'string', description: 'Channel ID' },
+        messageId: { type: 'string', description: 'ID of the top-level post to reply to' },
+        content: { type: 'string', description: 'Reply content' },
+        contentType: { type: 'string', enum: ['text', 'html'], description: 'Default: text' },
+      },
+      required: ['teamId', 'channelId', 'messageId', 'content'],
+    },
+  },
+  {
+    name: 'search_teams_messages',
+    description:
+      'Search Teams chat messages, e.g. "budget from:alice". Uses Graph search when the tenant grants ChannelMessage.Read.All; otherwise (the usual case) it scans the latest 50 messages of the 50 most recent chats, matching every term case-insensitively (from:name matches the sender), and says so in a "note". Each hit carries the chatId to open with get_teams_chat_messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        top: {
+          type: 'number',
+          description: 'Number of hits to return (default: 25, max: 25)',
+          minimum: 1,
+          maximum: 25,
+        },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -1368,6 +1571,149 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'delete_contact':
         await contactsTools.deleteContact(args.contactId as string);
         return { content: [{ type: 'text', text: 'Contact deleted successfully' }] };
+
+      // Teams operations
+      case 'list_teams_chats':
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await teamsTools.listChats(args as any)) },
+          ],
+        };
+      case 'get_teams_chat_messages':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.getChatMessages(args.chatId as string, args as any),
+              ),
+            },
+          ],
+        };
+      case 'send_teams_chat_message':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.sendChatMessage(
+                  args.chatId as string,
+                  args.content as string,
+                  args.contentType as any,
+                ),
+              ),
+            },
+          ],
+        };
+      case 'create_teams_chat':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.createChat(args.emails as string[], args.topic as string),
+              ),
+            },
+          ],
+        };
+      case 'mark_teams_chat_read':
+        await teamsTools.markChatRead(args.chatId as string);
+        return { content: [{ type: 'text', text: 'Chat marked as read' }] };
+      case 'react_to_teams_chat_message':
+        await teamsTools.setChatReaction(
+          args.chatId as string,
+          args.messageId as string,
+          args.reactionType as string,
+        );
+        return { content: [{ type: 'text', text: 'Reaction added' }] };
+      case 'list_joined_teams':
+        return {
+          content: [{ type: 'text', text: JSON.stringify(await teamsTools.listJoinedTeams()) }],
+        };
+      case 'list_teams_channels':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await teamsTools.listChannels(args.teamId as string)),
+            },
+          ],
+        };
+      case 'list_teams_channel_messages':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.listChannelMessages(
+                  args.teamId as string,
+                  args.channelId as string,
+                  args as any,
+                ),
+              ),
+            },
+          ],
+        };
+      case 'get_teams_channel_message_replies':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.getChannelMessageReplies(
+                  args.teamId as string,
+                  args.channelId as string,
+                  args.messageId as string,
+                  args as any,
+                ),
+              ),
+            },
+          ],
+        };
+      case 'send_teams_channel_message':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.sendChannelMessage(
+                  args.teamId as string,
+                  args.channelId as string,
+                  args.content as string,
+                  { contentType: args.contentType as any, subject: args.subject as string },
+                ),
+              ),
+            },
+          ],
+        };
+      case 'reply_to_teams_channel_message':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.replyToChannelMessage(
+                  args.teamId as string,
+                  args.channelId as string,
+                  args.messageId as string,
+                  args.content as string,
+                  args.contentType as any,
+                ),
+              ),
+            },
+          ],
+        };
+      case 'search_teams_messages':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await teamsTools.searchMessages(args.query as string, args as any),
+              ),
+            },
+          ],
+        };
 
       default:
         throw new Error(`Unknown tool: ${name}`);
