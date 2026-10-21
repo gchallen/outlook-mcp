@@ -44,67 +44,84 @@ draft is edited in OWA:
   a draft can rotate its message ID, so re-fetch the draft (via
   `list_messages`/`get_message`) before a follow-up `update_message`.
 
-## Installation
+## Getting Started
 
-### Prerequisites
+**Not technical? Start with the [guided setup](./docs/GUIDED-SETUP.md).** Paste
+its prompt into your AI app (Claude Desktop, Claude Code, Codex, Cursor, …) and
+the assistant walks you through every step, usually with no help needed from
+your IT department.
 
-- Node.js 18 or higher
-- An Azure App Registration with appropriate permissions
-- Microsoft Graph API access
+Each person registers their own app in their organization's Microsoft Entra
+directory (free, and allowed by default in most organizations). The server then
+runs on their own computer and signs in as them. There is no shared app and no
+hosted service.
 
-### Install via npm
+### Quick Start (Technical Users)
 
-```bash
-npm install -g outlook-mcp
-```
+1. Register a single-tenant app in Entra with **Allow public client flows = Yes**
+   ([INSTRUCTIONS.md](./INSTRUCTIONS.md)).
+2. Run setup. It finds your tenant from your email, saves
+   `~/.outlook-mcp/config.json`, and signs you in once:
 
-### Install from source
+   ```bash
+   npx -y @gchallen/outlook-mcp setup --email you@university.edu --client-id <application-client-id>
+   ```
 
-```bash
-git clone <repository-url>
-cd outlook-mcp
-npm install
-npm run build
-```
+3. Add the server to your AI app:
+
+   | App                 | How                                                                        |
+   | ------------------- | -------------------------------------------------------------------------- |
+   | Claude Desktop      | Double-click `outlook-mcp.mcpb` (from Releases; `npm run bundle` builds it) |
+   | Claude Code         | `claude mcp add outlook --scope user -- npx -y @gchallen/outlook-mcp`     |
+   | Codex               | `codex mcp add outlook -- npx -y @gchallen/outlook-mcp`                   |
+   | Cursor, VS Code, …  | `{"mcpServers": {"outlook": {"command": "npx", "args": ["-y", "@gchallen/outlook-mcp"]}}}` |
+
+   ChatGPT and claude.ai on the web only take remote (hosted) MCP servers, so
+   they can't use this local server.
+
+You can skip the sign-in during setup (`--no-login`). The first tool call then
+returns a Microsoft sign-in link and code, so you can sign in from inside any AI
+app with no terminal. The `outlook_status` tool does this on purpose.
+
+For a development install from source, see [SETUP.md](./SETUP.md).
 
 ## Configuration
 
-> **Setting this up locally for Claude Code?** Follow [SETUP.md](./SETUP.md) for
-> exact, copy-paste install steps (clone → build → sign in → register). The
-> notes below are the reference for the configuration it uses.
+Settings live in `~/.outlook-mcp/config.json` (or under `$OUTLOOK_MCP_HOME`):
 
-### Environment Variables
-
-Create a `.env` file in your project root:
-
-```bash
-AZURE_CLIENT_ID=your_client_id_here
-AZURE_TENANT_ID=your_tenant_id_here
-# Optional; defaults to Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,User.Read
-# GRAPH_SCOPES=Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,User.Read
+```json
+{
+  "email": "you@university.edu",
+  "clientId": "1a2b3c4d-…",
+  "tenantId": "…",
+  "teams": true,
+  "signature": "Jane Doe\nProfessor of Physics\nhttps://example.edu/~jane",
+  "extraScopes": []
+}
 ```
 
-Authentication uses the **device-code flow** (no client secret). The Azure app
-registration must have **"Allow public client flows" = Yes** and the matching
-delegated Graph permissions. See [INSTRUCTIONS.md](./INSTRUCTIONS.md) for how to
-create such a registration.
+- `tenantId` is optional when `email` is set. It's looked up from the email's
+  domain.
+- `teams: false` skips the Teams permissions at sign-in, for organizations that
+  require admin approval for them.
+- `signature` is plain text (one line per line, URLs linked) or an HTML
+  fragment. Leave it unset for no signature. The `set_signature` tool updates it,
+  so you can just ask your AI app to "use the signature from my last sent email".
+- The sign-in token is cached in `~/.outlook-mcp/token-cache.json` (mode 600).
 
-You authenticate once with `npm run login`, which caches a refresh token to
-`.token-cache.json` (gitignored). An optional `OUTLOOK_TOKEN_CACHE` env var
-overrides where that cache lives — useful when Claude Code launches the server
-from a different working directory.
-
-## Usage
-
-### As an MCP Server
-
-The server is designed to be used with MCP-compatible AI assistants. Start the server using:
-
-```bash
-npx outlook-mcp
-```
+Environment variables override the file: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+`OUTLOOK_EMAIL`, `OUTLOOK_TEAMS`, `GRAPH_SCOPES`, `EXTRA_GRAPH_SCOPES`, and
+`OUTLOOK_TOKEN_CACHE`. The exception is `OUTLOOK_SIGNATURE`, which applies only
+when the file has no `signature`. A `.env` file in the working directory is
+also read.
 
 ### Available Tools
+
+#### Setup Tools
+
+- `outlook_status` - Show the signed-in account and signature; starts a sign-in if needed
+- `get_signature` - Show the signature appended to outgoing mail
+- `set_signature` - Set or clear that signature (saved to the config file)
 
 #### Message Tools
 
@@ -315,13 +332,14 @@ npm run typecheck
 ## Authentication
 
 This server uses the **device-code flow** (a delegated, public-client OAuth
-flow). Run `npm run login` once: it prints a URL and a short code, you sign in
-through a browser, and a refresh token is cached to `.token-cache.json`. After
-that the server refreshes access tokens silently — no client secret involved.
+flow, with no client secret). The first sign-in (from `setup`, `outlook-mcp login`, or
+any tool call) shows a URL and a short code. You sign in through a browser, and a
+refresh token is cached locally. After that the server refreshes access tokens
+silently. When the refresh token expires, the next tool call starts a new
+sign-in.
 
-Delegated (`/me`) Graph endpoints require a user token, which is exactly what
-device-code provides. A client-secret/application token would not work for the
-`/me/...` calls this server makes.
+Sign-in failures are explained in plain language: admin consent required,
+public client flows disabled, wrong client ID, wrong account, and so on.
 
 ## Permissions
 
@@ -335,20 +353,21 @@ The following delegated Microsoft Graph permissions are used:
 - `People.Read` - Search relevant people and the directory
 - `Chat.ReadWrite`, `ChatMessage.Send` - Read, send, and mark Teams chats read
 - `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Send` - List teams and channels and post to them
-- `ChannelMessage.Read.All` (optional, admin consent) - Read channel posts; add it with
-  `EXTRA_GRAPH_SCOPES=ChannelMessage.Read.All npm run login`
-
-The Teams scopes are requested only at login. If the tenant refuses them, the
-mail, calendar, and contacts tools keep working and the Teams tools return a
-permission error.
 - `offline_access` - Obtain refresh tokens for silent re-authentication
+- `ChannelMessage.Read.All` (optional, admin consent) - Read channel posts; add it
+  with `"extraScopes": ["ChannelMessage.Read.All"]` and sign in again
+
+The Teams scopes are requested only at sign-in, and `teams: false` drops them.
+If they were never granted, the mail, calendar, and contacts tools keep working
+and the Teams tools return a permission error.
 
 ## Security
 
-- Never commit your `.env` file or expose your client secrets
-- Use principle of least privilege when configuring Azure App permissions
-- Regularly rotate your client secrets
-- Monitor your application's usage in the Azure portal
+- The server runs locally and uses delegated permissions only: it can do what
+  the signed-in user can do in their own mailbox, and nothing else.
+- There are no client secrets. The sensitive file is the token cache
+  (`~/.outlook-mcp/token-cache.json`, mode 600). Delete it to sign out.
+- Deleting the app registration in Entra revokes access immediately.
 
 ## License
 
@@ -367,6 +386,6 @@ ISC
 
 For issues and questions:
 
-1. Check the [INSTRUCTIONS.md](./INSTRUCTIONS.md) for setup help
+1. Check the [guided setup](./docs/GUIDED-SETUP.md) troubleshooting table
 2. Review the Microsoft Graph documentation
 3. File an issue on the repository

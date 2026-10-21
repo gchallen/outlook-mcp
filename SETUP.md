@@ -1,20 +1,19 @@
-# Setup (local MCP server for Claude Code)
+# Setup From Source (Development Install)
 
-This server runs locally over stdio and connects Claude Code to a single user's
-Outlook mailbox, calendar, and contacts via the Microsoft Graph API. It uses the
-**device-code OAuth flow** — you sign in once in a browser and the refresh token
-is cached locally, so the server can refresh silently afterward.
-
-These instructions are precise enough to follow start-to-finish (including by a
-coding agent). Commands assume macOS/Linux with Node.js 18+.
+Most people should use the [guided setup](./docs/GUIDED-SETUP.md) or the
+`npx` quick start in the [README](./README.md). This page covers running the
+server from a clone, for development. Every step can be copied and pasted,
+including by a coding agent. Commands assume macOS or Linux with Node.js 18+.
 
 ## 1. Prerequisites
 
 - Node.js 18 or higher (`node --version`).
-- The [Claude Code CLI](https://claude.com/claude-code) (`claude --version`).
-- A browser available to complete a one-time sign-in (can be on any device).
+- An MCP client: Claude Code (`claude --version`), Codex (`codex --version`),
+  or another.
+- An Entra app registration (single tenant, **Allow public client flows =
+  Yes**). See [INSTRUCTIONS.md](./INSTRUCTIONS.md).
 
-## 2. Clone and build
+## 2. Clone and Build
 
 ```bash
 git clone git@github.com:gchallen/outlook-mcp.git
@@ -23,88 +22,57 @@ npm install
 npm run build
 ```
 
-## 3. Configure credentials
-
-Create a `.env` file in the project root:
+## 3. Configure and Sign In
 
 ```bash
-AZURE_CLIENT_ID=<application-client-id>
-AZURE_TENANT_ID=<directory-tenant-id>
+npm run setup -- --email you@university.edu --client-id <application-client-id>
 ```
 
-Notes:
+This finds the tenant from the email domain, writes
+`~/.outlook-mcp/config.json`, and runs the device-code sign-in. It prints a
+URL and a short code to **stderr**. Open the URL in any browser, enter the
+code, sign in as the mailbox owner, and approve the permissions. The token
+cache is written to `~/.outlook-mcp/token-cache.json` (mode 600).
 
-- These are the **client ID** and **tenant ID** of the Azure app registration
-  (single-tenant, University of Illinois). They are **not secrets** — a public
-  client device-code app has no client secret. The only sensitive artifact is
-  the token cache produced in the next step, which stays on this machine and is
-  gitignored.
-- `GRAPH_SCOPES` is optional; it defaults to
-  `Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Contacts.ReadWrite,People.Read,User.Read`,
-  plus the Teams scopes
-  `Chat.ReadWrite,ChatMessage.Send,Team.ReadBasic.All,Channel.ReadBasic.All,ChannelMessage.Send`
-  at login. `EXTRA_GRAPH_SCOPES` appends more at login, e.g.
-  `ChannelMessage.Read.All` for reading channel posts (needs admin consent).
-- The Azure app must have **"Allow public client flows" = Yes** and the above
-  delegated Graph permissions. (The existing registration already does. If you
-  are setting up a brand-new app instead, see `INSTRUCTIONS.md`.)
+Options: `--tenant-id` to skip the lookup, `--no-teams` to skip the Teams
+permissions (for a "Need admin approval" screen), and `--no-login` to save
+settings only and sign in from the first tool call instead.
 
-## 4. Sign in once
+To sign in again later (expired or revoked token): `npm run login`.
+
+## 4. Register the Built Server
+
+Point the client at the compiled entry point with an **absolute path**:
 
 ```bash
-npm run login
+claude mcp add outlook --scope user -- node "$(pwd)/dist/cli.js"
+codex mcp add outlook -- node "$(pwd)/dist/cli.js"
 ```
 
-This prints a URL (https://microsoft.com/devicelogin) and a short code to
-**stderr**. Open the URL in any browser, enter the code, sign in as the mailbox
-owner, and approve the requested permissions. On success it writes
-`.token-cache.json` to the project root (mode 600, gitignored). You should see:
+No environment is needed: the server reads `~/.outlook-mcp/config.json` no
+matter which directory the client starts it from. (Older installs that pass
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `OUTLOOK_TOKEN_CACHE` as env vars and
+run `dist/index.js` keep working: env vars override the file.)
 
-```
-Signed in as <you>@illinois.edu. Token cache saved.
-```
-
-If you instead hit a "needs admin approval" screen, the tenant requires IT
-consent for these scopes — request it and retry.
-
-## 5. Register the server with Claude Code
-
-Use **absolute paths** for this machine. From the project directory:
-
-```bash
-claude mcp add outlook --scope user \
-  --env AZURE_CLIENT_ID=<application-client-id> \
-  --env AZURE_TENANT_ID=<directory-tenant-id> \
-  --env OUTLOOK_TOKEN_CACHE="$(pwd)/.token-cache.json" \
-  -- node "$(pwd)/dist/index.js"
-```
-
-Passing the env vars (and an absolute `OUTLOOK_TOKEN_CACHE`) here makes the
-server independent of the working directory Claude Code launches it from.
-
-## 6. Verify
+## 5. Verify
 
 ```bash
 claude mcp list          # 'outlook' should show ✔ Connected
 ```
 
-Restart Claude Code, then run `/mcp` — the `outlook` tools should be listed.
-Ask it something like "what's the most recent message in my inbox?" to confirm a
-live call works.
+Restart the client and ask it to "check my Outlook connection". This calls
+`outlook_status`, which reports the signed-in account and signature.
 
 ## Maintenance
 
-- **Re-authenticate** (token revoked/expired, or "Not authenticated" errors):
-  `npm run login` again.
 - **After editing `src/`**: `npm run build` (the registered server runs the
-  compiled `dist/`). Restart Claude Code to pick up changes.
+  compiled `dist/`). Restart the client to pick up changes.
 - **Quality gates**: `npm test`, `npm run lint`, `npm run format:check`,
   `npm run build` should all pass.
+- **Claude Desktop bundle**: `npm run bundle` builds `build/outlook-mcp.mcpb`
+  (production dependencies only) and validates its manifest.
 
-## What stays local (never commit)
+## What Stays Local (Never Commit)
 
-- `.env` — credentials/config
-- `.token-cache.json` — cached refresh tokens
-
-Both are gitignored. Everything else (including this machine's absolute paths in
-the `claude mcp add` command) is specific to the local install.
+- `~/.outlook-mcp/` holds the config and the cached refresh token.
+- `.env`, if you use one, is gitignored.

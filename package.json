@@ -1,26 +1,31 @@
 {
-  "name": "outlook-mcp",
-  "version": "1.0.0",
-  "description": "Model Context Protocol server for Microsoft Outlook via Graph API",
+  "name": "@gchallen/outlook-mcp",
+  "version": "2026.10.0",
+  "description": "Model Context Protocol server for Microsoft Outlook, Calendar, Contacts, and Teams via Microsoft Graph",
   "main": "dist/index.js",
   "bin": {
-    "outlook-mcp": "./dist/index.js"
+    "outlook-mcp": "./dist/cli.js"
   },
   "files": [
     "dist/**/*",
+    "docs/**/*",
     "README.md",
+    "SETUP.md",
     "INSTRUCTIONS.md",
+    "manifest.json",
     "package.json"
   ],
   "scripts": {
     "build": "tsc",
-    "login": "node dist/login.js",
+    "login": "node dist/cli.js login",
     "dev": "ts-node src/index.ts",
     "test": "jest",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "setup": "node dist/cli.js setup",
+    "bundle": "sh scripts/bundle.sh"
   },
   "keywords": [
     "mcp",
@@ -28,18 +33,26 @@
     "outlook",
     "microsoft-graph",
     "email",
-    "office365"
+    "office365",
+    "teams",
+    "education"
   ],
-  "author": "Claude Code",
+  "author": "Geoffrey Challen",
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/outlook-mcp.git"
+    "url": "git+https://github.com/gchallen/outlook-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/outlook-mcp/issues"
+    "url": "https://github.com/gchallen/outlook-mcp/issues"
   },
-  "homepage": "https://github.com/your-username/outlook-mcp#readme",
+  "homepage": "https://github.com/gchallen/outlook-mcp#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "dependencies": {
     "@azure/msal-node": "^3.7.4",

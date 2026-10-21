@@ -1,13 +1,14 @@
-// The user's email signature, extracted from their sent mail. Appended
-// automatically to outgoing messages. This MCP server is single-user.
+// The user's email signature, appended automatically to outgoing messages.
+// It comes from the user's config (see config.ts) via setSignature; with none
+// configured nothing is appended. Each user runs their own server, so this is
+// process-wide state set once at startup (and by the set_signature tool).
 //
-// Dark-mode-safe styling (same rationale as the comment wrapper below): the
-// muted "Geoffrey Challen //" name sets NO color and uses opacity:0.6 to dim
-// against whatever background is behind it — 0.6 over white reproduces the old
-// rgb(102,102,102) gray, and it stays legible in dark mode instead of going
-// dim-on-dark. The URL keeps an explicit blue: a link needs a recognizable
-// color affordance, and clients expect/adjust link colors. Outlook desktop
-// ignores opacity and shows full-contrast default text — a safe degradation.
+// Dark-mode-safe styling (same rationale as the comment wrapper below): a
+// signature should set NO text color, so it inherits the client's foreground
+// in both light and dark mode; dim secondary text with opacity instead of a
+// gray. Links keep an explicit blue: a link needs a recognizable color
+// affordance, and clients expect/adjust link colors. Outlook desktop ignores
+// opacity and shows full-contrast default text — a safe degradation.
 //
 // Single source of truth for the outgoing font, shared by the signature, the
 // comment wrapper, and every authored block. Arial is web-safe (present on
@@ -56,23 +57,77 @@ export const BLANK_LINE = block('');
 // regardless of how that message was authored. Content preceding the
 // signature must therefore NOT end in its own blank line (see
 // normalizeParagraphs and textToBlocks), or the gap doubles.
-export const SIGNATURE_HTML =
-  '<div id="Signature">' +
-  BLANK_LINE +
-  `<div style="${BLOCK_STYLE}">` +
-  '<span style="opacity:0.6">Geoffrey Challen&nbsp;// </span>' +
-  '<a href="https://geoffreychallen.com" title="https://geoffreychallen.com" style="color:rgb(12,100,192)">https://geoffreychallen.com</a>' +
-  '</div></div>';
-
-export const SIGNATURE_TEXT = 'Geoffrey Challen // https://geoffreychallen.com';
-
+//
 // Marker used to detect an already-signed HTML body and avoid double-signing.
-// Matches the id on SIGNATURE_HTML's wrapper — NOT the bare domain, which also
-// appears when the URL is merely mentioned in prose. (An earlier version keyed
-// on 'geoffreychallen.com', which meant a comment that spelled out the plain
-// signature suppressed the styled one and shipped as unlinked text.)
+// Matches the id on the signature's wrapper — NOT any text inside it, which
+// also appears when, say, the user's URL is merely mentioned in prose. (An
+// earlier version keyed on the bare domain, which meant a comment that spelled
+// out the plain signature suppressed the styled one and shipped as unlinked
+// text.)
 const SIGNED_MARKER = 'id="Signature"';
 const SIGNATURE_OPEN = '<div id="Signature">';
+
+let signatureHtmlValue = '';
+let signatureTextValue = '';
+
+/** True when `sig` should be read as HTML rather than plain text. */
+function looksLikeHtml(sig: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(sig);
+}
+
+/**
+ * The plain-text reading of an HTML signature: tags dropped, line-breaking
+ * elements turned into newlines, common entities decoded. Used to recognize a
+ * spelled-out copy of the signature in authored text.
+ */
+function htmlToPlain(html: string): string {
+  return html
+    .replace(/<br\s*\/?>|<\/(div|p|li|tr)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Configure the signature. `sig` is plain text (one line per line, URLs
+ * hyperlinked automatically) or an HTML fragment; empty or undefined removes
+ * the signature entirely.
+ */
+export function setSignature(sig?: string): void {
+  const trimmed = (sig ?? '').replace(/\r/g, '').trim();
+  if (!trimmed) {
+    signatureHtmlValue = '';
+    signatureTextValue = '';
+    return;
+  }
+  const html = looksLikeHtml(trimmed);
+  const inner = html
+    ? `<div style="${BLOCK_STYLE}">${linkifyHtml(trimmed)}</div>`
+    : textToBlocks(trimmed);
+  signatureHtmlValue = SIGNATURE_OPEN + BLANK_LINE + inner + '</div>';
+  signatureTextValue = html ? htmlToPlain(trimmed) : trimmed;
+}
+
+/** The styled signature block appended to outgoing mail ('' when none is set). */
+export function signatureHtml(): string {
+  return signatureHtmlValue;
+}
+
+/** The plain-text form of the signature ('' when none is set). */
+export function signatureText(): string {
+  return signatureTextValue;
+}
+
+export function hasSignature(): boolean {
+  return signatureHtmlValue !== '';
+}
 
 interface MessageBody {
   contentType?: string;
@@ -87,7 +142,7 @@ function escapeHtml(text: string): string {
 // brackets terminate the match so hrefs and tags never bleed in.
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"']+/gi;
 
-// Link style shared with SIGNATURE_HTML: an explicit blue affordance that
+// Link style shared with the signature: an explicit blue affordance that
 // clients recognize and adjust for dark mode.
 const LINK_STYLE = 'color:rgb(12,100,192)';
 
@@ -191,13 +246,13 @@ export function textToBlocks(text: string): string {
 /**
  * Remove any spelled-out plain-text signature from authored text. Callers
  * (humans and models alike) habitually type the signature at the end of a
- * message; the styled SIGNATURE_HTML is appended in its place, so leaving the
+ * message; the styled signature is appended in its place, so leaving the
  * plain copy in would double-sign — and, worse, ship the URL as unlinked text.
  */
 function stripPlainSignature(text: string): { text: string; stripped: boolean } {
-  if (!text.includes(SIGNATURE_TEXT)) return { text, stripped: false };
+  if (!signatureTextValue || !text.includes(signatureTextValue)) return { text, stripped: false };
   return {
-    text: text.split(SIGNATURE_TEXT).join('').replace(/\s+$/, ''),
+    text: text.split(signatureTextValue).join('').replace(/\s+$/, ''),
     stripped: true,
   };
 }
@@ -283,8 +338,8 @@ export function normalizeParagraphs(html: string): string {
  * OWA-style block per line) rather than sent as text, whose URLs render
  * unlinked in most clients. An HTML body has its <p> paragraphs normalized to
  * the same block structure. Any spelled-out plain signature is stripped and
- * replaced by the styled SIGNATURE_HTML. A body already carrying
- * SIGNATURE_HTML is returned unchanged.
+ * replaced by the styled signature. A body already carrying
+ * the styled signature is returned unchanged.
  *
  * HTML bodies are also wrapped in an explicit font (FONT_STACK/FONT_SIZE).
  * Without it list items and other non-block markup inherit OWA's base UI font
@@ -309,11 +364,11 @@ export function withSignature(body?: MessageBody): MessageBody | undefined {
       : textToBlocks(stripPlainSignature(content).text);
 
   if (!rendered) {
-    return { contentType: 'html', content: SIGNATURE_HTML };
+    return { contentType: 'html', content: signatureHtml() };
   }
 
   const wrapped = `<div style="${BODY_STYLE}">${rendered}</div>`;
-  return { contentType: 'html', content: wrapped + SIGNATURE_HTML };
+  return { contentType: 'html', content: wrapped + signatureHtml() };
 }
 
 /**
@@ -358,7 +413,7 @@ function isFontBearingRoot(html: string): boolean {
  * hyperlinked: a plain-text replacement body is converted rather than stored
  * as text. The signature stays the caller's responsibility on this path (a
  * PATCH replaces the whole body, which normally already carries it) — but a
- * spelled-out plain-text signature is upgraded to the styled SIGNATURE_HTML so
+ * spelled-out plain-text signature is upgraded to the styled signature so
  * it keeps its hyperlink.
  */
 export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
@@ -369,7 +424,7 @@ export function withOutgoingFont(body?: MessageBody): MessageBody | undefined {
     const wrapped = `<div style="${BODY_STYLE}">${textToBlocks(text)}</div>`;
     return {
       contentType: 'html',
-      content: stripped ? wrapped + SIGNATURE_HTML : wrapped,
+      content: stripped ? wrapped + signatureHtml() : wrapped,
     };
   }
 
@@ -420,14 +475,14 @@ export function buildReplyTopHtml(comment?: string, opts?: { raw?: boolean }): s
     const signed = html.includes(SIGNED_MARKER);
     const rendered = normalizeParagraphs(linkifyHtml(html));
     const commentHtml = rendered ? `<div style="${BODY_STYLE}">${rendered}</div>` : '';
-    return signed ? commentHtml : commentHtml + SIGNATURE_HTML;
+    return signed ? commentHtml : commentHtml + signatureHtml();
   }
 
   // Plain-text comment: any spelled-out signature is stripped so the styled
   // one below is the only copy, then each line becomes an OWA-style block.
   const rendered = textToBlocks(stripPlainSignature(comment ?? '').text);
   const commentHtml = rendered ? `<div style="${BODY_STYLE}">${rendered}</div>` : '';
-  return commentHtml + SIGNATURE_HTML;
+  return commentHtml + signatureHtml();
 }
 
 /**

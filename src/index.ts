@@ -6,7 +6,15 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { GraphAuthProvider } from './auth.js';
+import { AuthRequiredError, GraphAuthProvider, explainAuthError } from './auth.js';
+import {
+  GUIDE_URL,
+  PACKAGE_NAME,
+  discoverTenantId,
+  resolveConfig,
+  writeConfigFile,
+} from './config.js';
+import { hasSignature, setSignature, signatureHtml, signatureText } from './signature.js';
 import { MessageTools } from './tools/message-tools.js';
 import { FolderTools } from './tools/folder-tools.js';
 import { RuleTools } from './tools/rule-tools.js';
@@ -22,14 +30,36 @@ import 'isomorphic-fetch';
 // and breaks the connection.
 dotenv.config({ quiet: true });
 
+const config = resolveConfig();
+setSignature(config.signature);
+
+// Tool descriptions say what happens to sign-offs, which depends on whether
+// this user has a signature configured. Without one, telling the model "do not
+// write a sign-off, the server adds it" would send unsigned mail. These are
+// functions because set_signature can change the answer mid-session.
+const signatureAppended = () =>
+  hasSignature()
+    ? 'the styled HTML signature is appended'
+    : 'no signature is appended (none is configured)';
+const signatureRule = () =>
+  hasSignature()
+    ? 'Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one).'
+    : 'No signature is configured, so end the body with whatever sign-off the user wants (set_signature can configure one to append automatically).';
+const replySignatureRule = () =>
+  hasSignature()
+    ? 'Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.'
+    : 'No signature is configured, so include any sign-off the user wants in the comment.';
+
+const SETUP_HELP = `Outlook is not set up yet: no Azure app client ID is configured. Follow the guided setup at ${GUIDE_URL}, or run \`npx -y ${PACKAGE_NAME} setup\` in a terminal.`;
+
 const server = new Server(
   {
     name: 'outlook-mcp',
-    version: '1.0.0',
+    version: '2026.10.0',
   },
   {
     capabilities: {
-      tools: {},
+      tools: { listChanged: true },
     },
   },
 );
@@ -56,12 +86,34 @@ function summarizeDraft(draft: any) {
   };
 }
 
+let authProvider: GraphAuthProvider | undefined;
+let configError: string | undefined;
+
 async function initializeGraphClient() {
-  const authProvider = new GraphAuthProvider({
-    clientId: process.env.AZURE_CLIENT_ID || '',
-    tenantId: process.env.AZURE_TENANT_ID,
-    scopes: process.env.GRAPH_SCOPES?.split(','),
-    cachePath: process.env.OUTLOOK_TOKEN_CACHE,
+  if (!config.clientId) {
+    configError = SETUP_HELP;
+    return;
+  }
+  let tenantId = config.tenantId;
+  if (!tenantId && config.email) {
+    try {
+      tenantId = await discoverTenantId(config.email);
+    } catch (error) {
+      configError = `Could not look up the Microsoft 365 organization for ${config.email}: ${(error as Error).message}`;
+      return;
+    }
+  }
+  if (!tenantId) {
+    configError = `Outlook is not fully set up: neither a tenant ID nor an email address is configured. Re-run setup (\`npx -y ${PACKAGE_NAME} setup\`).`;
+    return;
+  }
+
+  authProvider = new GraphAuthProvider({
+    clientId: config.clientId,
+    tenantId,
+    scopes: config.scopes,
+    loginScopes: config.loginScopes,
+    cachePath: config.cachePath,
   });
 
   const client = authProvider.getClient();
@@ -74,7 +126,37 @@ async function initializeGraphClient() {
   teamsTools = new TeamsTools(client);
 }
 
-const tools: Tool[] = [
+// Built per request so descriptions track the current signature.
+const buildTools = (): Tool[] => [
+  // Setup Tools
+  {
+    name: 'outlook_status',
+    description:
+      'Check the Outlook connection: whether setup is complete, which account is signed in, and whether a signature is configured. If the user is not signed in yet, this starts a Microsoft sign-in and returns a link and code for the user to enter in their browser; after they finish, call it again to confirm. Use this first when setting up, or when another tool reports that sign-in is needed.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_signature',
+    description:
+      'Show the email signature that is appended automatically to new mail, replies, and forwards (empty if none is configured).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'set_signature',
+    description:
+      "Set the email signature appended automatically to new mail, replies, and forwards. Pass plain text (one line per line; URLs become links) or an HTML fragment, or an empty string to remove the signature. To copy the user's existing signature, read one of their recent sent messages and pass its signature block, then show the user the result of get_signature to confirm. Saved to the user's config file, and takes effect immediately. Tool descriptions that mention the signature update after the AI app is restarted.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        signature: {
+          type: 'string',
+          description: 'Signature as plain text or an HTML fragment; empty string removes it',
+        },
+      },
+      required: ['signature'],
+    },
+  },
+
   // Message Tools
   {
     name: 'list_messages',
@@ -115,8 +197,7 @@ const tools: Tool[] = [
   },
   {
     name: 'create_message',
-    description:
-      'Create a draft message. Every body goes out as HTML: a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) and the styled HTML signature is appended either way, so plain prose can simply be sent as "text". Lines starting "- " or "1. " in a "text" body become real bulleted or numbered lists. For other rich formatting, set body.contentType to "html" and use <p> for paragraphs. Bare URLs in HTML bodies are also auto-hyperlinked (existing <a> tags are left alone). Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one). Use Title Case for the subject line.',
+    description: `Create a draft message. Every body goes out as HTML: a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) and ${signatureAppended()} either way, so plain prose can simply be sent as "text". Lines starting "- " or "1. " in a "text" body become real bulleted or numbered lists. For other rich formatting, set body.contentType to "html" and use <p> for paragraphs. Bare URLs in HTML bodies are also auto-hyperlinked (existing <a> tags are left alone). ${signatureRule()} Use Title Case for the subject line.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -190,8 +271,7 @@ const tools: Tool[] = [
   },
   {
     name: 'send_mail',
-    description:
-      'Send a new email directly. Same formatting rules as create_message: every body goes out as HTML — a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) and the styled signature is appended either way. Lines starting "- " or "1. " in a "text" body become real lists. Do not write your own signature or closing sign-off such as "Best, <name>": the server appends the signature that closes the message (a typed-out plain signature is stripped and replaced by the styled one). Use Title Case for the subject line.',
+    description: `Send a new email directly. Same formatting rules as create_message: every body goes out as HTML — a "text" body is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) and ${signatureAppended()} either way. Lines starting "- " or "1. " in a "text" body become real lists. ${signatureRule()} Use Title Case for the subject line.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -225,8 +305,7 @@ const tools: Tool[] = [
   },
   {
     name: 'reply_to_message',
-    description:
-      'Reply to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with the styled signature appended — do not write your own signature.',
+    description: `Reply to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with ${hasSignature() ? 'the styled signature appended' : 'no signature appended'}. ${replySignatureRule()}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -238,8 +317,7 @@ const tools: Tool[] = [
   },
   {
     name: 'reply_all_to_message',
-    description:
-      'Reply all to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with the styled signature appended — do not write your own signature.',
+    description: `Reply all to a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with ${hasSignature() ? 'the styled signature appended' : 'no signature appended'}. ${replySignatureRule()}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -251,8 +329,7 @@ const tools: Tool[] = [
   },
   {
     name: 'reply_to_message_draft',
-    description:
-      'Create a reply draft (to sender only) without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML with the styled signature appended: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+    description: `Create a reply draft (to sender only) without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML (${signatureAppended()}): a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). ${replySignatureRule()}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -270,8 +347,7 @@ const tools: Tool[] = [
   },
   {
     name: 'reply_all_to_message_draft',
-    description:
-      'Create a reply-all draft without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML with the styled signature appended: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+    description: `Create a reply-all draft without sending it. Returns the draft so it can be reviewed and sent later. The reply always goes out as HTML (${signatureAppended()}): a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). ${replySignatureRule()}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -289,8 +365,7 @@ const tools: Tool[] = [
   },
   {
     name: 'forward_message',
-    description:
-      'Forward a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with the styled signature appended — do not write your own signature.',
+    description: `Forward a message and send immediately. The comment is treated as plain text and converted to HTML automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists) with ${hasSignature() ? 'the styled signature appended' : 'no signature appended'}. ${replySignatureRule()}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -316,8 +391,7 @@ const tools: Tool[] = [
   },
   {
     name: 'forward_message_draft',
-    description:
-      'Create a forward draft without sending it. Returns the draft so it can be reviewed and sent later. The forward always goes out as HTML with the styled signature appended above the quoted original: a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). Do not write your own signature — a typed-out plain signature is stripped and replaced by the styled one.',
+    description: `Create a forward draft without sending it. Returns the draft so it can be reviewed and sent later. The forward always goes out as HTML (${signatureAppended()}, above the quoted original): a "text" comment is converted automatically (escaped, bare URLs hyperlinked, line breaks preserved, "- " and "1. " lines made into lists). ${replySignatureRule()}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -403,7 +477,7 @@ const tools: Tool[] = [
   {
     name: 'search_messages',
     description:
-      'Full-text search across mail using Microsoft Graph $search (KQL). Prefer property-scoped queries over bare keywords for much better precision. Supported properties (combine space-separated for implicit AND, or with explicit AND/OR/NOT): from:alice@x.com, to:, cc:, subject:budget, body:, participants: (any of from/to/cc), hasAttachment:true, attachment:report.pdf, received>=2024-01-01, received:2024-01-01..2024-01-31, sent>=, importance:high, isRead:false. Do NOT quote simple single-token values like an email address (from:alice@x.com, not from:"alice@x.com"). Only put double quotes around multi-word phrase values: subject:"quarterly report". Do NOT wrap the whole query in outer quotes — the tool adds the outer quoting Graph requires. Examples: from:dean@illinois.edu subject:budget received>=2024-09-01 / hasAttachment:true subject:"final grades". Note: $search results are relevance-ranked and CANNOT be date-sorted or combined with an OData $filter (a Graph limitation, not a tool one); when you need strict newest-first ordering or a hard field filter, use list_messages with filter/orderBy instead. Scope to one folder with folderId (get IDs from list_mail_folders / get_well_known_folder).',
+      'Full-text search across mail using Microsoft Graph $search (KQL). Prefer property-scoped queries over bare keywords for much better precision. Supported properties (combine space-separated for implicit AND, or with explicit AND/OR/NOT): from:alice@x.com, to:, cc:, subject:budget, body:, participants: (any of from/to/cc), hasAttachment:true, attachment:report.pdf, received>=2024-01-01, received:2024-01-01..2024-01-31, sent>=, importance:high, isRead:false. Do NOT quote simple single-token values like an email address (from:alice@x.com, not from:"alice@x.com"). Only put double quotes around multi-word phrase values: subject:"quarterly report". Do NOT wrap the whole query in outer quotes — the tool adds the outer quoting Graph requires. Examples: from:dean@example.edu subject:budget received>=2024-09-01 / hasAttachment:true subject:"final grades". Note: $search results are relevance-ranked and CANNOT be date-sorted or combined with an OData $filter (a Graph limitation, not a tool one); when you need strict newest-first ordering or a hard field filter, use list_messages with filter/orderBy instead. Scope to one folder with folderId (get IDs from list_mail_folders / get_well_known_folder).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1148,18 +1222,51 @@ const tools: Tool[] = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools,
+  tools: buildTools(),
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name } = request.params;
+  const args = request.params.arguments ?? {};
 
   try {
-    if (!args) {
-      throw new Error('No arguments provided');
+    // Signature tools work without a Microsoft sign-in.
+    if (name === 'get_signature') return textResult(describeSignature());
+    if (name === 'set_signature') {
+      const signature = String(args.signature ?? '');
+      writeConfigFile(config.configPath, { signature });
+      setSignature(signature);
+      // Tool descriptions mention the signature; tell clients to re-fetch them.
+      await server.sendToolListChanged().catch(() => undefined);
+      return textResult(`Signature saved to ${config.configPath}.\n\n${describeSignature()}`);
+    }
+
+    if (configError || !authProvider) return textResult(configError ?? SETUP_HELP);
+
+    // Check for a usable sign-in before calling Graph. Without one, start a
+    // device-code sign-in and hand its instructions back as the tool result,
+    // so a user can sign in from any MCP client without a terminal.
+    try {
+      await authProvider.getAccessToken();
+    } catch (error) {
+      if (!(error instanceof AuthRequiredError)) throw error;
+      return textResult(await signInInstructions(authProvider, error.message));
     }
 
     switch (name) {
+      case 'outlook_status': {
+        const username = await authProvider.getUsername();
+        return textResult(
+          [
+            `Connected to Outlook as ${username}.`,
+            `Config file: ${config.configPath}`,
+            hasSignature()
+              ? `Signature: configured (${signatureText().split('\n').join(' / ')})`
+              : 'Signature: none configured (set_signature can add one).',
+          ].join('\n'),
+        );
+      }
+
       // Message operations
       case 'list_messages':
         return {
@@ -1719,16 +1826,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-    };
+    return textResult(
+      `Error: ${error instanceof Error ? error.message : String(error)}${permissionHint(name, error)}`,
+    );
   }
 });
+
+function textResult(text: string) {
+  return { content: [{ type: 'text', text }] };
+}
+
+function describeSignature(): string {
+  if (!hasSignature()) return 'No signature is configured. Nothing is appended to outgoing mail.';
+  return `Current signature (plain text):\n${signatureText()}\n\nHTML appended to messages:\n${signatureHtml()}`;
+}
+
+async function signInInstructions(auth: GraphAuthProvider, reason: string): Promise<string> {
+  const failure = auth.takeLoginError();
+  const previous = failure
+    ? `The previous sign-in attempt failed: ${explainAuthError(failure)}\n\n`
+    : '';
+  try {
+    const instructions = await auth.beginDeviceLogin();
+    return (
+      previous +
+      `${reason} To connect Outlook, the user needs to sign in: ${instructions}\n\n` +
+      'Show the user this link and code, and have them sign in with their work or school account and accept the permissions. Once they say they are done, call this tool again (or call outlook_status to confirm).'
+    );
+  } catch (error) {
+    return `${previous}Could not start a Microsoft sign-in: ${explainAuthError(error)}`;
+  }
+}
+
+// A 403 from Graph almost always means a permission (scope) this user never
+// consented to, often because their organization requires admin approval for
+// it. Say so instead of leaving a bare "Forbidden".
+function permissionHint(tool: string, error: unknown): string {
+  const status = (error as { statusCode?: number })?.statusCode;
+  if (status !== 403) return '';
+  const area = tool.includes('teams') ? 'Teams' : 'this';
+  return `\n\nMicrosoft denied access. This usually means the permission ${area} feature needs was not granted when the user signed in, often because their organization requires an administrator to approve it. Other Outlook tools may still work.`;
+}
 
 async function main() {
   await initializeGraphClient();

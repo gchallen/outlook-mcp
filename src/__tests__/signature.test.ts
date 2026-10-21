@@ -1,6 +1,8 @@
 import {
-  SIGNATURE_HTML,
-  SIGNATURE_TEXT,
+  setSignature,
+  signatureHtml,
+  signatureText,
+  hasSignature,
   withSignature,
   buildReplyTopHtml,
   injectReplyTop,
@@ -13,6 +15,14 @@ import {
   textToHtml,
   textToBlocks,
 } from '../signature.js';
+
+// A styled HTML signature, configured the way a user's config file would.
+const TEST_SIGNATURE =
+  '<span style="opacity:0.6">Geoffrey Challen&nbsp;// </span>' +
+  '<a href="https://geoffreychallen.com" title="https://geoffreychallen.com" style="color:rgb(12,100,192)">https://geoffreychallen.com</a>';
+setSignature(TEST_SIGNATURE);
+const SIGNATURE_HTML = signatureHtml();
+const SIGNATURE_TEXT = signatureText();
 
 describe('signature', () => {
   describe('withSignature', () => {
@@ -529,5 +539,52 @@ describe('textToBlocks lists', () => {
     expect(textToBlocks('-5 degrees\n3.14 is pi\n2026. A year')).toBe(
       block('-5 degrees') + block('3.14 is pi') + block('2026. A year'),
     );
+  });
+});
+
+describe('configurable signature', () => {
+  afterEach(() => setSignature(TEST_SIGNATURE));
+
+  it('derives the plain-text form of an HTML signature', () => {
+    expect(signatureText()).toBe('Geoffrey Challen // https://geoffreychallen.com');
+    expect(hasSignature()).toBe(true);
+  });
+
+  it('renders a plain-text signature one block per line with links', () => {
+    setSignature('Jane Doe\nProfessor of Physics\nhttps://example.edu/~jane');
+    const html = signatureHtml();
+    expect(html.startsWith(`<div id="Signature">${BLANK_LINE}`)).toBe(true);
+    expect(html).toContain(block('Jane Doe'));
+    expect(html).toContain(block('Professor of Physics'));
+    expect(html).toContain('<a href="https://example.edu/~jane"');
+    expect(signatureText()).toBe('Jane Doe\nProfessor of Physics\nhttps://example.edu/~jane');
+  });
+
+  it('strips a typed-out copy of a plain-text signature', () => {
+    setSignature('Jane Doe\nProfessor of Physics');
+    const result = withSignature({
+      contentType: 'text',
+      content: 'Thanks!\n\nJane Doe\nProfessor of Physics',
+    });
+    expect(result?.content!.match(/Jane Doe/g)).toHaveLength(1);
+    expect(result?.content!.endsWith(signatureHtml())).toBe(true);
+  });
+
+  it('appends nothing when no signature is configured', () => {
+    setSignature('');
+    expect(hasSignature()).toBe(false);
+    expect(signatureHtml()).toBe('');
+    expect(withSignature({ contentType: 'text', content: 'Hi' })?.content).toBe(
+      `<div style="font-family:Arial,Helvetica,sans-serif; font-size:11pt">${block('Hi')}</div>`,
+    );
+    expect(buildReplyTopHtml()).toBe('');
+    expect(withOutgoingFont({ contentType: 'text', content: 'Hi' })?.content).not.toContain(
+      'Signature',
+    );
+  });
+
+  it('treats an undefined signature as none', () => {
+    setSignature(undefined);
+    expect(hasSignature()).toBe(false);
   });
 });

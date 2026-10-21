@@ -24,5 +24,7 @@ export default {
     '!src/**/*.spec.ts',
     '!src/index.ts',
     '!src/login.ts',
+    '!src/setup.ts',
+    '!src/cli.ts',
   ],
 };

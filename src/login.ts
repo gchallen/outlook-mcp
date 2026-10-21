@@ -1,25 +1,26 @@
 #!/usr/bin/env node
-import { GraphAuthProvider, DEFAULT_SCOPES, TEAMS_SCOPES } from './auth.js';
+import { GraphAuthProvider, explainAuthError } from './auth.js';
+import { PACKAGE_NAME, discoverTenantId, resolveConfig } from './config.js';
 import * as dotenv from 'dotenv';
 import 'isomorphic-fetch';
 
 dotenv.config({ quiet: true });
 
+// Re-run the device-code sign-in with the existing configuration, e.g. after
+// the cached sign-in expires. First-time configuration is `setup`'s job.
 async function main() {
-  const clientId = process.env.AZURE_CLIENT_ID;
-  if (!clientId) {
-    console.error('AZURE_CLIENT_ID is not set. Create a .env file (see .env.example).');
+  const config = resolveConfig();
+  if (!config.clientId) {
+    console.error(`No client ID is configured. Run \`npx -y ${PACKAGE_NAME} setup\` first.`);
     process.exit(1);
   }
 
   const auth = new GraphAuthProvider({
-    clientId,
-    tenantId: process.env.AZURE_TENANT_ID,
-    scopes: [
-      ...(process.env.GRAPH_SCOPES?.split(',') ?? [...DEFAULT_SCOPES, ...TEAMS_SCOPES]),
-      ...(process.env.EXTRA_GRAPH_SCOPES?.split(',') ?? []),
-    ],
-    cachePath: process.env.OUTLOOK_TOKEN_CACHE,
+    clientId: config.clientId,
+    tenantId: config.tenantId ?? (config.email ? await discoverTenantId(config.email) : undefined),
+    scopes: config.scopes,
+    loginScopes: config.loginScopes,
+    cachePath: config.cachePath,
   });
 
   console.error('Starting interactive sign-in...');
@@ -29,6 +30,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Login failed:', error instanceof Error ? error.message : error);
+  console.error('Login failed:', explainAuthError(error));
   process.exit(1);
 });

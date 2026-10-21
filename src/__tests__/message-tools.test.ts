@@ -1,11 +1,18 @@
 import { MessageTools } from '../tools/message-tools';
-import { SIGNATURE_HTML, block } from '../signature';
+import { block, setSignature, signatureHtml } from '../signature';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { readFile, mkdtemp, rm, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 jest.mock('@microsoft/microsoft-graph-client');
+
+// A styled HTML signature, configured the way a user's config file would.
+const TEST_SIGNATURE =
+  '<span style="opacity:0.6">Geoffrey Challen&nbsp;// </span>' +
+  '<a href="https://geoffreychallen.com" title="https://geoffreychallen.com" style="color:rgb(12,100,192)">https://geoffreychallen.com</a>';
+setSignature(TEST_SIGNATURE);
+const SIGNATURE_HTML = signatureHtml();
 
 // Mirror of the font wrapper withSignature() applies to HTML bodies.
 const FONT = 'font-family:Arial,Helvetica,sans-serif; font-size:11pt';
