@@ -55,7 +55,7 @@ export class AuthRequiredError extends Error {
 const AUTH_ERROR_HINTS: [RegExp, string][] = [
   [
     /AADSTS(65001|90094|90095|900941)/,
-    'Your organization requires an administrator to approve one or more of the requested permissions. The Teams permissions are the most likely cause: try again without them by re-running setup with --no-teams (or adding "teams": false to ~/.outlook-mcp/config.json and restarting the AI app). If that still fails, self-service setup is blocked in this organization and IT would need to approve the app.',
+    'Your organization requires an administrator to approve one or more of the requested permissions. The Teams permissions are the most likely cause: try again without them. In Claude Desktop, turn off "Include Microsoft Teams" in the Outlook extension settings; otherwise re-run setup with --no-teams (or add "teams": false to ~/.outlook-mcp/config.json) and restart the AI app. If that still fails, self-service setup is blocked in this organization and IT would need to approve the app.',
   ],
   [
     /AADSTS700016/,

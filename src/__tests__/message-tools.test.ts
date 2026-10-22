@@ -1,7 +1,7 @@
 import { MessageTools } from '../tools/message-tools';
 import { block, setSignature, signatureHtml } from '../signature';
 import { Client } from '@microsoft/microsoft-graph-client';
-import { readFile, mkdtemp, rm, mkdir } from 'fs/promises';
+import { readFile, mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -502,6 +502,102 @@ describe('MessageTools', () => {
       await messageTools.deleteAttachment('1', 'a');
       expect(mockClient.api).toHaveBeenCalledWith('/me/messages/1/attachments/a');
       expect(mockRequest.delete).toHaveBeenCalled();
+    });
+  });
+
+  describe('addFileAttachment', () => {
+    const realFetch = global.fetch;
+    let dir: string;
+
+    beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'outlook-mcp-attach-'));
+    });
+
+    afterEach(async () => {
+      global.fetch = realFetch;
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    const fileOf = async (name: string, bytes: number) => {
+      const path = join(dir, name);
+      await writeFile(path, Buffer.alloc(bytes, 7));
+      return path;
+    };
+
+    it('attaches a small file directly', async () => {
+      const path = join(dir, 'syllabus.pdf');
+      await writeFile(path, 'hello');
+      const result = await messageTools.addFileAttachment('m1', path);
+      expect(result).toEqual({ name: 'syllabus.pdf', size: 5, method: 'simple' });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/messages/m1/attachments');
+      expect(mockRequest.post).toHaveBeenCalledWith({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: 'syllabus.pdf',
+        contentType: 'application/pdf',
+        contentBytes: Buffer.from('hello').toString('base64'),
+      });
+    });
+
+    it('uploads a large file in chunks through an upload session', async () => {
+      const size = 10_000_000;
+      const path = await fileOf('lecture.mp4', size);
+      mockRequest.post.mockResolvedValue({ uploadUrl: 'https://upload.example/session' });
+      const puts: { range: string; length: number }[] = [];
+      global.fetch = jest.fn(async (_url: any, init: any) => {
+        puts.push({ range: init.headers['Content-Range'], length: init.body.byteLength });
+        return { ok: true, status: 200 };
+      }) as unknown as typeof fetch;
+
+      const result = await messageTools.addFileAttachment('m1', path);
+
+      expect(result).toEqual({ name: 'lecture.mp4', size, method: 'upload-session' });
+      expect(mockClient.api).toHaveBeenCalledWith(
+        '/me/messages/m1/attachments/createUploadSession',
+      );
+      expect(mockRequest.post).toHaveBeenCalledWith({
+        AttachmentItem: {
+          attachmentType: 'file',
+          name: 'lecture.mp4',
+          size,
+          contentType: expect.any(String),
+        },
+      });
+      expect(puts).toEqual([
+        { range: `bytes 0-4915199/${size}`, length: 4915200 },
+        { range: `bytes 4915200-9830399/${size}`, length: 4915200 },
+        { range: `bytes 9830400-9999999/${size}`, length: 169600 },
+      ]);
+      // The upload URL is pre-authenticated; no Graph token goes with it.
+      for (const [, init] of (global.fetch as jest.Mock).mock.calls) {
+        expect(init.headers.Authorization).toBeUndefined();
+      }
+    });
+
+    it('reports a failed chunk', async () => {
+      const path = await fileOf('big.bin', 4_000_000);
+      mockRequest.post.mockResolvedValue({ uploadUrl: 'https://upload.example/session' });
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 413,
+        text: async () => 'too large',
+      }) as unknown as typeof fetch;
+      await expect(messageTools.addFileAttachment('m1', path)).rejects.toThrow(
+        'Upload session chunk failed (bytes 0-3999999/4000000): HTTP 413 too large',
+      );
+    });
+
+    it('fails clearly when Graph returns no upload URL', async () => {
+      const path = await fileOf('big.bin', 4_000_000);
+      mockRequest.post.mockResolvedValue({});
+      await expect(messageTools.addFileAttachment('m1', path)).rejects.toThrow(
+        'createUploadSession did not return an uploadUrl.',
+      );
+    });
+
+    it('fails clearly when the file does not exist', async () => {
+      await expect(messageTools.addFileAttachment('m1', join(dir, 'missing.pdf'))).rejects.toThrow(
+        /ENOENT/,
+      );
     });
   });
 

@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "outlook-mcp",
   "display_name": "Outlook (Microsoft 365)",
-  "version": "2026.10.0",
+  "version": "2026.10.1",
   "description": "Read, draft, and send Outlook email, manage your calendar and contacts, and use Teams chats from your work or school Microsoft 365 account.",
   "long_description": "Connects your AI app to your own Microsoft 365 mailbox through Microsoft Graph, using an app registration you create yourself. The first time you use it, it shows a Microsoft sign-in link and code. Step-by-step guide: https://github.com/gchallen/outlook-mcp/blob/main/docs/GUIDED-SETUP.md",
   "author": {

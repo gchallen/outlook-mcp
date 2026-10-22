@@ -159,6 +159,61 @@ describe('TeamsTools', () => {
   });
 
   describe('channels', () => {
+    const post = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      messageType: 'message',
+      createdDateTime: `2026-10-0${id.slice(-1)}T00:00:00Z`,
+      from: { user: { displayName: 'Pat Teacher' } },
+      body: { contentType: 'html', content: `<p>post ${id}</p>` },
+      ...extra,
+    });
+
+    it('lists joined teams', async () => {
+      mockRequest.get.mockResolvedValue({ value: [{ id: 't1', displayName: 'CS 124' }] });
+      expect(await teamsTools.listJoinedTeams()).toEqual({
+        value: [{ id: 't1', displayName: 'CS 124' }],
+      });
+      expect(mockClient.api).toHaveBeenCalledWith('/me/joinedTeams');
+      expect(mockRequest.select).toHaveBeenCalledWith('id,displayName,description');
+    });
+
+    it('lists the channels in a team, tolerating an empty response', async () => {
+      mockRequest.get.mockResolvedValue({});
+      expect(await teamsTools.listChannels('t1')).toEqual({ value: [] });
+      expect(mockClient.api).toHaveBeenCalledWith('/teams/t1/channels');
+    });
+
+    it('lists channel posts, skipping system events, with a clamped page size', async () => {
+      mockRequest.get.mockResolvedValue({
+        value: [post('m1', { subject: 'Exam' }), { id: 'e1', messageType: 'systemEventMessage' }],
+      });
+      const result = await teamsTools.listChannelMessages('t1', 'c1', { top: 500 });
+      expect(mockClient.api).toHaveBeenCalledWith('/teams/t1/channels/c1/messages');
+      expect(mockRequest.top).toHaveBeenCalledWith(50);
+      expect(result.value).toEqual([
+        {
+          id: 'm1',
+          createdDateTime: '2026-10-01T00:00:00Z',
+          from: 'Pat Teacher',
+          subject: 'Exam',
+          text: 'post m1',
+        },
+      ]);
+    });
+
+    it('returns thread replies oldest first', async () => {
+      mockRequest.get.mockResolvedValue({ value: [post('r2'), post('r1')] });
+      const result = await teamsTools.getChannelMessageReplies('t1', 'c1', 'm1');
+      expect(mockClient.api).toHaveBeenCalledWith('/teams/t1/channels/c1/messages/m1/replies');
+      expect(result.value.map((m: any) => m.id)).toEqual(['r1', 'r2']);
+    });
+
+    it('reacts to a chat message', async () => {
+      await teamsTools.setChatReaction('c1', 'm1', 'like');
+      expect(mockClient.api).toHaveBeenCalledWith('/chats/c1/messages/m1/setReaction');
+      expect(mockRequest.post).toHaveBeenCalledWith({ reactionType: 'like' });
+    });
+
     it('replies in a channel thread', async () => {
       await teamsTools.replyToChannelMessage('t', 'ch', 'm', 'ok');
       expect(mockClient.api).toHaveBeenCalledWith('/teams/t/channels/ch/messages/m/replies');

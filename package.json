@@ -1,10 +1,10 @@
 {
   "name": "@gchallen/outlook-mcp",
-  "version": "2026.10.0",
+  "version": "2026.10.1",
   "description": "Model Context Protocol server for Microsoft Outlook, Calendar, Contacts, and Teams via Microsoft Graph",
   "main": "dist/index.js",
   "bin": {
-    "outlook-mcp": "./dist/cli.js"
+    "outlook-mcp": "dist/cli.js"
   },
   "files": [
     "dist/**/*",

@@ -67,10 +67,12 @@ export function writeConfigFile(file: string, updates: FileConfig): FileConfig {
 }
 
 // Clients that template optional settings into env (the .mcpb bundle does)
-// pass unset ones as empty strings, which must read as "not set".
+// pass unset ones as empty strings, or possibly as the unfilled placeholder
+// itself ("${user_config.signature}"). Both must read as "not set", or the
+// placeholder would be appended to every email as a signature.
 function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const value = env[name]?.trim();
-  return value ? value : undefined;
+  return value && !/^\$\{[^}]*\}$/.test(value) ? value : undefined;
 }
 
 function list(value?: string): string[] | undefined {

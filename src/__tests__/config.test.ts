@@ -62,6 +62,40 @@ describe('config', () => {
       expect(config.loginScopes).toEqual(DEFAULT_SCOPES);
     });
 
+    it('ignores unfilled placeholders from the Claude Desktop extension', () => {
+      writeConfigFile(configPath(env), { email: 'file@example.edu' });
+      const config = resolveConfig({
+        ...env,
+        OUTLOOK_EMAIL: '${user_config.email}',
+        OUTLOOK_SIGNATURE: '${user_config.signature}',
+        OUTLOOK_TEAMS: '${user_config.teams}',
+      });
+      expect(config.email).toBe('file@example.edu');
+      expect(config.signature).toBeUndefined();
+      expect(config.loginScopes).toEqual([...DEFAULT_SCOPES, ...TEAMS_SCOPES]);
+    });
+
+    it('reads the extension settings as Claude Desktop passes them', () => {
+      const config = resolveConfig({
+        ...env,
+        OUTLOOK_EMAIL: 'teacher@example.edu',
+        AZURE_CLIENT_ID: '11111111-2222-4333-8444-555555555555',
+        OUTLOOK_SIGNATURE: '',
+        OUTLOOK_TEAMS: 'false',
+      });
+      expect(config).toMatchObject({
+        email: 'teacher@example.edu',
+        clientId: '11111111-2222-4333-8444-555555555555',
+        tenantId: undefined,
+        signature: undefined,
+      });
+      expect(config.loginScopes).toEqual(DEFAULT_SCOPES);
+      expect(resolveConfig({ ...env, OUTLOOK_TEAMS: 'true' }).loginScopes).toEqual([
+        ...DEFAULT_SCOPES,
+        ...TEAMS_SCOPES,
+      ]);
+    });
+
     it('prefers the file signature over env, which may spell newlines as \\n', () => {
       expect(resolveConfig({ ...env, OUTLOOK_SIGNATURE: 'A\\nB' }).signature).toBe('A\nB');
       writeConfigFile(configPath(env), { signature: '' });
